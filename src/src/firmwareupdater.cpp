@@ -20,6 +20,13 @@ uint8_t byte_at(const QByteArray& data, int offset)
 
 } // namespace
 
+QUrl FirmwareUpdater::latest_release_url()
+{
+    return QUrl(QStringLiteral(
+        "https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/"
+        "p2000t-programmable-cartridge-firmware.hex"));
+}
+
 FirmwareImageInfo FirmwareUpdater::validate_application_hex(const QByteArray& contents)
 {
     FirmwareImageInfo info;

@@ -33,6 +33,7 @@
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
 #include <QTextStream>
+#include <QStringConverter>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -380,7 +381,7 @@ void LogWindow::save_log() {
         return;
     }
     QTextStream stream(&file);
-    stream.setCodec("UTF-8");
+    stream.setEncoding(QStringConverter::Utf8);
     stream << text_box->toPlainText() << '\n';
     file.commit();
 }

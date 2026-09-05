@@ -49,8 +49,6 @@ private:
     unsigned int pos_addr;
     unsigned int pos_hex;
     unsigned int pos_ascii;
-    unsigned int bytes_per_line = 16;
-
     static const unsigned int CHARACTERS_LINE = 16;
     static const unsigned int GAP_ADR_HEX = 16;
     static const unsigned int GAP_HEX_ASCII = 16;

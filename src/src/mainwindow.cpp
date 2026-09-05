@@ -4,6 +4,7 @@
 #include "bankselector.h"
 #include "config.h"
 #include "filedownloader.h"
+#include "firmwarecompatibility.h"
 #include "firmwareupdater.h"
 #include "hexviewwidget.h"
 #include "logwindow.h"
@@ -36,6 +37,7 @@
 #include <QSerialPortInfo>
 #include <QSpacerItem>
 #include <QStatusBar>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <QThread>
 #include <QUrl>
@@ -157,7 +159,7 @@ MainWindow::MainWindow(const std::shared_ptr<QStringList> _log_messages,
     this->setWindowTitle(PROGRAM_NAME);
 
     QFont hex_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    hex_font.setPointSize(10);
+    hex_font.setPointSize(9);
     hex_font.setStyleHint(QFont::TypeWriter);
     this->hex_widget->setFont(hex_font);
     QFont descriptor_font = hex_font;
@@ -245,23 +247,25 @@ void MainWindow::build_rom_selection_menu(QVBoxLayout* target_layout)
     this->rom_container = new QGroupBox(tr("P2000T ROM images"));
     auto* layout = new QVBoxLayout(this->rom_container);
     auto* choose = new QPushButton(tr("Choose a curated ROM"), this->rom_container);
+    choose->setObjectName("buttonChooseCuratedRom");
     layout->addWidget(choose);
 
     const QList<QPair<QString, QString>> images = {
         {"BASICNL v1.1", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/BASICNL1.1.bin"},
-        {"Joystick ROM", "https://github.com/ifilot/p2000t-joystick-cartridge/releases/download/nightly/joystick_eeprom.bin"},
         {"Assembler v5.9", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/assembler%205.9.bin"},
         {"BASICNL Bootstrap for SD-CARD cartridge", "https://github.com/ifilot/p2000t-sdcard/releases/latest/download/BASICBOOTSTRAP.BIN"},
         {"Familiegeheugen v4", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/familiegeheugen%204.bin"},
         {"Flasher for SD-CARD cartridge", "https://github.com/ifilot/p2000t-sdcard/releases/latest/download/FLASHER.BIN"},
         {"Forth compiler", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/Forth.bin"},
         {"Maintenance cartridge", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/Maintenance%202.bin"},
+        {"P2000T Teletekst Cartridge", "https://github.com/ifilot/p2000t-teletekst-cartridge/releases/latest/download/p2wp-cartridge.bin"},
         {"RAM expansion test", "https://github.com/ifilot/p2000t-ram-expansion-board/releases/latest/download/RAMTEST.BIN"},
         {"Word Processor v2", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/WordProcessor%202.bin"},
         {"Zemon assembler v1.4", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/Zemon%201.4.bin"}
     };
 
     auto* menu = new QMenu(choose);
+    menu->setObjectName("menuCuratedRoms");
     const QIcon rom_icon(":/assets/icon/bluecurve/rom-file.png");
     for(const auto& image : images) {
         auto* action = menu->addAction(rom_icon, image.first);
@@ -284,8 +288,16 @@ void MainWindow::build_operations_menu(QVBoxLayout* target_layout)
 
     this->button_identify_chip = new QPushButton(tr("Identify SST39SF020"), device_group);
     this->button_identify_chip->setObjectName("buttonIdentifyChip");
-    this->button_install_firmware = new QPushButton(tr("Install application firmware…"), device_group);
+    this->button_install_firmware = new QPushButton(tr("Install application firmware"), device_group);
     this->button_install_firmware->setObjectName("buttonInstallFirmware");
+    auto* firmware_menu = new QMenu(this->button_install_firmware);
+    firmware_menu->setObjectName("menuInstallFirmware");
+    auto* install_latest = firmware_menu->addAction(tr("Install latest release from GitHub"));
+    install_latest->setObjectName("actionInstallLatestFirmware");
+    install_latest->setToolTip(FirmwareUpdater::latest_release_url().toString());
+    auto* install_file = firmware_menu->addAction(tr("Install from file…"));
+    install_file->setObjectName("actionInstallFirmwareFile");
+    this->button_install_firmware->setMenu(firmware_menu);
     device_layout->addWidget(this->button_identify_chip);
     device_layout->addWidget(this->button_install_firmware);
     target_layout->addWidget(device_group);
@@ -330,7 +342,8 @@ void MainWindow::build_operations_menu(QVBoxLayout* target_layout)
 
     this->set_operation_busy(false);
     connect(this->button_identify_chip, &QPushButton::released, this, &MainWindow::read_chip_id);
-    connect(this->button_install_firmware, &QPushButton::released, this, &MainWindow::install_firmware);
+    connect(install_latest, &QAction::triggered, this, &MainWindow::install_latest_firmware);
+    connect(install_file, &QAction::triggered, this, &MainWindow::select_firmware_file);
     connect(this->button_read_bank, &QPushButton::released, this, &MainWindow::read_bank);
     connect(this->button_write_bank, &QPushButton::released, this, &MainWindow::write_bank);
     connect(this->button_erase_bank, &QPushButton::released, this, &MainWindow::erase_bank);
@@ -379,14 +392,28 @@ void MainWindow::select_com_port()
         const QString board_info = QString::fromStdString(this->serial_interface->get_board_info());
         this->serial_interface->close_port();
 
-        if(board_info != QString::fromLatin1(P2000T_BOARD_INFO)) {
-            throw std::runtime_error(QStringLiteral("Unsupported firmware '%1'; version %2 is required")
-                                     .arg(board_info, QString::fromLatin1(PROGRAM_VERSION)).toStdString());
+        const QString studio_version = QString::fromLatin1(PROGRAM_VERSION);
+        const QString firmware_version = FirmwareCompatibility::version_from_board_info(board_info);
+        const QStringList supported_versions =
+            FirmwareCompatibility::supported_firmware_versions(studio_version);
+        if(firmware_version.isEmpty()) {
+            throw std::runtime_error(QStringLiteral("Invalid firmware identity '%1'")
+                                     .arg(board_info).toStdString());
+        }
+        if(!FirmwareCompatibility::is_supported(studio_version, firmware_version)) {
+            const QString supported = supported_versions.isEmpty()
+                ? QStringLiteral("none (the compatibility matrix needs an entry for this Studio release)")
+                : supported_versions.join(QStringLiteral(", "));
+            throw std::runtime_error(
+                QStringLiteral("Firmware %1 is not compatible with Studio %2; supported firmware versions: %3")
+                    .arg(firmware_version, studio_version, supported).toStdString());
         }
         this->board_connected = true;
         this->label_serial->setText(tr("Port: %1").arg(this->combobox_serial_ports->currentText()));
         this->label_board_id->setText(tr("Board: %1").arg(board_info));
-        this->statusBar()->showMessage(tr("Connected to the P2000T cartridge."));
+        this->statusBar()->showMessage(
+            tr("Connected to firmware %1 (compatible with Studio %2).")
+                .arg(firmware_version, studio_version));
     } catch(const std::exception& e) {
         if(this->serial_interface) {
             try { this->serial_interface->close_port(); } catch(...) {}
@@ -411,7 +438,7 @@ void MainWindow::read_chip_id()
     this->set_operation_busy(false);
 }
 
-void MainWindow::install_firmware()
+void MainWindow::select_firmware_file()
 {
     QDir dir(this->settings.value("last_firmware_dir", QDir::homePath()).toString());
     if(!dir.exists()) dir.setPath(QDir::homePath());
@@ -419,6 +446,67 @@ void MainWindow::install_firmware()
         this, tr("Select application firmware"), dir.absolutePath(),
         tr("Intel HEX firmware (*.hex);;All files (*)"));
     if(filename.isEmpty()) return;
+
+    this->install_firmware_file(filename, QFileInfo(filename).fileName(), true);
+}
+
+void MainWindow::install_latest_firmware()
+{
+    const QUrl url = FirmwareUpdater::latest_release_url();
+    QProgressDialog download_progress(tr("Downloading the latest application firmware…"),
+                                      QString(), 0, 0, this);
+    download_progress.setWindowTitle(tr("Downloading firmware"));
+    download_progress.setWindowModality(Qt::ApplicationModal);
+    download_progress.setCancelButton(nullptr);
+    download_progress.show();
+    QApplication::processEvents();
+
+    FileDownloader downloader(url);
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    connect(&downloader, &FileDownloader::downloaded, &loop, &QEventLoop::quit);
+    connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timer.start(30000);
+    loop.exec();
+    download_progress.close();
+
+    if(!timer.isActive()) {
+        this->raise_error_window(tr("Downloading the latest firmware timed out after 30 seconds.\n\n%1")
+                                 .arg(url.toString()));
+        return;
+    }
+    timer.stop();
+    if(!downloader.isSuccessful()) {
+        this->raise_error_window(tr("Could not download the latest firmware.\n\n%1\n\n%2")
+                                 .arg(url.toString(), downloader.errorMessage()));
+        return;
+    }
+
+    const QByteArray contents = downloader.downloadedData();
+    constexpr qsizetype MAX_FIRMWARE_DOWNLOAD_SIZE = 1024 * 1024;
+    if(contents.isEmpty() || contents.size() > MAX_FIRMWARE_DOWNLOAD_SIZE) {
+        this->raise_error_window(tr("The downloaded firmware has an invalid size (%1 bytes).")
+                                 .arg(contents.size()));
+        return;
+    }
+
+    QTemporaryFile temporary_file(
+        QDir::tempPath() + QStringLiteral("/p2000t-cartridge-firmware-XXXXXX.hex"));
+    if(!temporary_file.open() || temporary_file.write(contents) != contents.size() ||
+       !temporary_file.flush()) {
+        this->raise_error_window(tr("Could not create a temporary file for the downloaded firmware."));
+        return;
+    }
+    const QString filename = temporary_file.fileName();
+    temporary_file.close();
+    this->install_firmware_file(filename, tr("latest GitHub release"), false);
+}
+
+void MainWindow::install_firmware_file(const QString& filename,
+                                       const QString& display_name,
+                                       bool remember_directory)
+{
 
     FirmwareImageInfo image_info;
     try {
@@ -442,10 +530,12 @@ void MainWindow::install_firmware()
     if(QMessageBox::question(this, tr("Install application firmware"),
         tr("Install %1 (%2 data bytes, ending below 0x7000)?\n\n"
            "The USB bootloader remains protected, but the current application firmware will be erased.")
-            .arg(QFileInfo(filename).fileName()).arg(image_info.data_bytes),
+            .arg(display_name).arg(image_info.data_bytes),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
 
-    this->settings.setValue("last_firmware_dir", QFileInfo(filename).absolutePath());
+    if(remember_directory) {
+        this->settings.setValue("last_firmware_dir", QFileInfo(filename).absolutePath());
+    }
     this->set_operation_busy(true);
     QProgressDialog progress(tr("Entering the USB bootloader…"), QString(), 0, 0, this);
     progress.setWindowTitle(tr("Installing firmware"));
@@ -468,7 +558,7 @@ void MainWindow::install_firmware()
         if(boot_port.isEmpty()) throw std::runtime_error("The USB bootloader did not enumerate within 15 seconds");
 
         progress.setLabelText(tr("Programming and verifying %1 on %2…")
-                              .arg(QFileInfo(filename).fileName(), boot_port));
+                              .arg(display_name, boot_port));
         QApplication::processEvents();
 
         QProcess process;

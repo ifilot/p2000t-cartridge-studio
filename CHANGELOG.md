@@ -7,6 +7,29 @@ version.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-05
+
+### Changed
+
+- Migrated the desktop application and Windows build from Qt 5 to Qt 6 while
+  retaining the existing layout and preferring the Windows Vista widget style.
+- Bundled the complete matching MinGW runtime dependency chain so installed
+  builds do not accidentally load incompatible DLLs from the Windows search
+  path.
+- Expanded the About dialog with supported-cartridge, compatibility, USB,
+  build, project-link, and software-licensing details.
+- Added an option to download, validate, install, and verify the latest
+  application firmware from the stable GitHub release URL.
+- Replaced the curated joystick image with the P2000T Teletekst Cartridge
+  image from its stable GitHub release URL.
+
+### Fixed
+
+- Reduced the hex-view font size, restored true 16-byte rows, and added
+  horizontal scrolling as a fallback for high-DPI displays.
+- Replaced the exact GUI/firmware version check with an explicit compatibility
+  matrix; Studio 0.1.1 supports firmware 0.1.0 and 0.1.1.
+
 ## [0.1.0] - 2026-09-05
 
 ### Added
@@ -36,5 +59,6 @@ version.
 - Replaced the bundled Consolas font with the operating system's monospace
   font and removed obsolete, unlicensed ROM assets.
 
-[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ifilot/p2000t-cartridge-studio/releases/tag/v0.1.0

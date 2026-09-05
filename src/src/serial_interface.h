@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 
-/** Host-side implementation of the version-matched P2000T cartridge USB CDC protocol. */
+/** Host-side implementation of the versioned P2000T cartridge USB CDC protocol. */
 class SerialInterface {
 public:
     using TransportFactory = std::function<std::unique_ptr<SerialTransport>(const std::string&)>;

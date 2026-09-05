@@ -1,6 +1,7 @@
 #include "aboutdialog.h"
 
 #include "config.h"
+#include "firmwarecompatibility.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -22,7 +23,15 @@ QLabel *selectable_value(const QString& text, QWidget *parent)
 {
     auto *label = new QLabel(text, parent);
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setWordWrap(true);
     return label;
+}
+
+QString compatible_firmware_text()
+{
+    const QStringList versions = FirmwareCompatibility::supported_firmware_versions(
+        QString::fromLatin1(PROGRAM_VERSION));
+    return versions.isEmpty() ? QStringLiteral("none") : versions.join(QStringLiteral(", "));
 }
 
 } // namespace
@@ -34,8 +43,8 @@ AboutDialog::AboutDialog(QWidget *parent)
     setWindowTitle(tr("About %1").arg(PROGRAM_NAME));
     setWindowIcon(QIcon(PROGRAM_ICON));
     setModal(true);
-    setMinimumWidth(560);
-    resize(680, 600);
+    setMinimumWidth(620);
+    resize(720, 680);
 
     auto *main_layout = new QVBoxLayout(this);
     main_layout->setSpacing(14);
@@ -57,8 +66,8 @@ AboutDialog::AboutDialog(QWidget *parent)
     title_layout->addWidget(title_label);
 
     auto *description_label = new QLabel(
-        tr("Read, program, erase, and verify the SST39SF020 in the USB-enabled "
-           "P2000T multi-cartridge."),
+        tr("Manage the SST39SF020 flash memory in an ATmega32U4-based "
+           "programmable data cartridge for the Philips P2000T."),
         this);
     description_label->setWordWrap(true);
     title_layout->addWidget(description_label);
@@ -66,8 +75,13 @@ AboutDialog::AboutDialog(QWidget *parent)
     main_layout->addLayout(header_layout);
 
     auto *links_label = new QLabel(
-        tr("<a href=\"https://github.com/ifilot/p2000t-cartridge-studio\">Project website</a>"),
+        tr("<a href=\"https://github.com/ifilot/p2000t-cartridge-studio\">Source code</a>"
+           " &nbsp;&middot;&nbsp; "
+           "<a href=\"https://github.com/ifilot/p2000t-cartridge-studio/releases\">Releases</a>"
+           " &nbsp;&middot;&nbsp; "
+           "<a href=\"https://github.com/ifilot/p2000t-cartridge-studio/issues\">Report a problem</a>"),
         this);
+    links_label->setObjectName("aboutLinks");
     links_label->setAlignment(Qt::AlignHCenter);
     links_label->setOpenExternalLinks(true);
     links_label->setWordWrap(true);
@@ -78,32 +92,49 @@ AboutDialog::AboutDialog(QWidget *parent)
     separator->setFrameShadow(QFrame::Sunken);
     main_layout->addWidget(separator);
 
-    auto *build_group = new QGroupBox(tr("Build information"), this);
+    auto *cartridge_group = new QGroupBox(tr("Supported cartridge"), this);
+    cartridge_group->setObjectName("aboutCartridgeGroup");
+    auto *cartridge_layout = new QFormLayout(cartridge_group);
+    cartridge_layout->addRow(
+        tr("Controller:"), selectable_value(tr("ATmega32U4 with native USB serial"), cartridge_group));
+    cartridge_layout->addRow(
+        tr("Flash memory:"), selectable_value(tr("SST39SF020, 256 KiB (device ID BF B6)"), cartridge_group));
+    cartridge_layout->addRow(
+        tr("ROM organization:"), selectable_value(tr("16 banks of 16 KiB"), cartridge_group));
+    cartridge_layout->addRow(
+        tr("USB identifiers:"), selectable_value(tr("Application 03EB:2044; bootloader 03EB:204A"), cartridge_group));
+    cartridge_layout->addRow(
+        tr("Firmware compatibility:"),
+        selectable_value(tr("Studio %1 supports firmware %2")
+                             .arg(PROGRAM_VERSION, compatible_firmware_text()),
+                         cartridge_group));
+    main_layout->addWidget(cartridge_group);
+
+    auto *build_group = new QGroupBox(tr("Software and build information"), this);
+    build_group->setObjectName("aboutBuildGroup");
     auto *build_layout = new QFormLayout(build_group);
-    build_layout->addRow(tr("Version:"), selectable_value(PROGRAM_VERSION, build_group));
+    build_layout->addRow(tr("Application version:"), selectable_value(PROGRAM_VERSION, build_group));
     build_layout->addRow(tr("Git revision:"), selectable_value(GIT_HASH, build_group));
-    build_layout->addRow(tr("Built:"), selectable_value(QStringLiteral(__DATE__), build_group));
-    build_layout->addRow(tr("Qt:"), selectable_value(QString::fromLatin1(qVersion()), build_group));
+    build_layout->addRow(tr("Build date:"), selectable_value(QStringLiteral(__DATE__), build_group));
+    build_layout->addRow(tr("Qt runtime:"), selectable_value(QString::fromLatin1(qVersion()), build_group));
     main_layout->addWidget(build_group);
 
     auto *credits = new QTextBrowser(this);
     credits->setObjectName("aboutCredits");
     credits->setOpenExternalLinks(true);
     credits->setReadOnly(true);
-    credits->setMinimumHeight(160);
+    credits->setMinimumHeight(145);
     credits->setHtml(
         tr("<p><b>Developed by Ivo Filot</b><br>"
            "<a href=\"mailto:ivo@ivofilot.nl\">ivo@ivofilot.nl</a><br>"
            "Copyright &copy; 2023&ndash;2026 Ivo Filot</p>"
-           "<p>The GUI and firmware are free software distributed under the "
+           "<p>The project-owned application, firmware, bootloader, and build tools "
+           "are free software distributed under the "
            "<a href=\"https://www.gnu.org/licenses/gpl-3.0.html\">GNU GPL v3</a>. "
-           "The hardware designs are distributed under "
-           "<a href=\"https://creativecommons.org/licenses/by-sa/4.0/\">CC BY-SA 4.0</a>. "
            "This application uses the "
-           "<a href=\"https://www.qt.io/licensing/open-source-lgpl-obligations\">Qt framework</a> "
-           "and third-party icons credited in the source distribution.</p>"
-           "<p>Open-source hardware certification: "
-           "<a href=\"https://certification.oshwa.org/nl000020.html\">NL000020</a>.</p>"));
+           "<a href=\"https://www.qt.io/licensing/open-source-lgpl-obligations\">Qt 6 framework</a>. "
+           "Bundled third-party software and artwork retain their respective licences; "
+           "notices are included in the source and binary distributions.</p>"));
     main_layout->addWidget(credits);
 
     auto *button_box = new QDialogButtonBox(QDialogButtonBox::Close, this);
@@ -121,6 +152,11 @@ AboutDialog::AboutDialog(QWidget *parent)
 QString AboutDialog::system_information() const
 {
     return tr("%1 %2\n"
+              "Compatible firmware versions: %8\n"
+              "Cartridge controller: ATmega32U4\n"
+              "Flash memory: SST39SF020, 256 KiB (16 x 16 KiB)\n"
+              "Application USB ID: 03EB:2044\n"
+              "Bootloader USB ID: 03EB:204A\n"
               "Git revision: %3\n"
               "Build date: %4\n"
               "Qt version: %5\n"
@@ -132,5 +168,6 @@ QString AboutDialog::system_information() const
              QStringLiteral(__DATE__),
              QString::fromLatin1(qVersion()),
              QSysInfo::prettyProductName(),
-             QSysInfo::currentCpuArchitecture());
+             QSysInfo::currentCpuArchitecture(),
+             compatible_firmware_text());
 }

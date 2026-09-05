@@ -20,6 +20,8 @@
 
 #include "hexviewwidget.h"
 
+#include <algorithm>
+
 /**
  * @brief HexViewWidget::HexViewWidget
  * @param parent window
@@ -48,10 +50,16 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
     this->update_positions();
 
     QPainter painter(viewport());
-    QSize area_size = viewport()->size();
-    QSize widget_size = this->get_widget_size();
-    this->verticalScrollBar()->setPageStep(area_size.height() / charheight);
-    this->verticalScrollBar()->setRange(0, (widget_size.height() - area_size.height()) / charheight + 2);
+    const QSize area_size = viewport()->size();
+    const QSize widget_size = this->get_widget_size();
+    const int visible_lines = std::max(1, area_size.height() / static_cast<int>(this->charheight) - 1);
+    const qsizetype total_lines = (this->data.size() + CHARACTERS_LINE - 1) /
+                                 CHARACTERS_LINE;
+    this->verticalScrollBar()->setPageStep(visible_lines);
+    this->verticalScrollBar()->setRange(
+        0, std::max(0, static_cast<int>(total_lines) - visible_lines));
+    this->horizontalScrollBar()->setPageStep(area_size.width());
+    this->horizontalScrollBar()->setRange(0, std::max(0, widget_size.width() - area_size.width()));
 
     // grab colors
     settings.sync();
@@ -64,6 +72,7 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
 
     // set background color
     painter.fillRect(event->rect(), background_color);
+    painter.translate(-this->horizontalScrollBar()->value(), 0);
 
 //    qDebug() << "Loading " << column_color.name() << " for column color";
 //    qDebug() << "Loading " << text_color.name() << " for text color";
@@ -80,8 +89,8 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
 //                           this->charheight + GAP_HEADER),
 //                           address_area_color);
 
-    unsigned int start_idx = verticalScrollBar() -> value();
-    unsigned int end_idx = start_idx + area_size.height() / this->charheight - 1;
+    const qsizetype start_idx = verticalScrollBar()->value();
+    const qsizetype end_idx = std::min(total_lines, start_idx + visible_lines);
 
     // print header
     painter.setPen(header_color);
@@ -98,21 +107,25 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
         return;
     }
 
-    for(unsigned int line_idx = start_idx, ypos = this->charheight * 2;  line_idx < end_idx; line_idx++, ypos += this->charheight) {
+    int ypos = static_cast<int>(this->charheight * 2);
+    for(qsizetype line_idx = start_idx; line_idx < end_idx;
+        ++line_idx, ypos += static_cast<int>(this->charheight)) {
 
         // print address
         painter.setPen(address_color);
-        QString address = QString("%1").arg(line_idx * this->bytes_per_line, 10, 16, QChar('0'));
+        QString address = QString("%1").arg(line_idx * CHARACTERS_LINE, 10, 16, QChar('0'));
         painter.drawText(this->pos_addr, ypos, address);
 
         // print hex characters
         for(unsigned int i=0; i<CHARACTERS_LINE; i++) {
+            const qsizetype data_idx = line_idx * CHARACTERS_LINE + i;
+            if(data_idx >= this->data.size()) break;
             if(i % 2 == 0) {
                 painter.setPen(column_color);
             } else {
                 painter.setPen(alt_column_color);
             }
-            const uint8_t ch = this->data[line_idx * bytes_per_line + i];
+            const uint8_t ch = this->data[data_idx];
             const QString hex_string  = QString("%1").arg(ch, 2, 16, QChar('0')).toUpper();
             painter.drawText(this->pos_hex + i * 3 * this->charwidth, ypos, hex_string);
         }
@@ -120,7 +133,9 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
         // print ascii characters
         painter.setPen(ascii_color);
         for(unsigned int i=0; i<CHARACTERS_LINE; i++) {
-            uint8_t ch = this->data[line_idx * bytes_per_line + i];
+            const qsizetype data_idx = line_idx * CHARACTERS_LINE + i;
+            if(data_idx >= this->data.size()) break;
+            uint8_t ch = this->data[data_idx];
             if ((ch < 0x20) || (ch > 0x7e)) {
                 ch = '.';
             }
@@ -134,13 +149,10 @@ void HexViewWidget::paintEvent(QPaintEvent *event) {
  * @return widget size
  */
 QSize HexViewWidget::get_widget_size() const {
-    if(this->data.size() == 0) {
-        return QSize(0, 0);
-    }
-
-    unsigned int width = CHARACTERS_LINE + (this->bytes_per_line * this->charwidth);
-    unsigned int height = this->data.size() / this->bytes_per_line;
-    if(this->data.size() % this->bytes_per_line) {
+    const unsigned int width = this->pos_ascii +
+                               (CHARACTERS_LINE + 1) * this->charwidth;
+    unsigned int height = this->data.size() / CHARACTERS_LINE;
+    if(this->data.size() % CHARACTERS_LINE) {
         height++;
     }
 
@@ -155,10 +167,6 @@ QSize HexViewWidget::get_widget_size() const {
 void HexViewWidget::update_positions() {
     this->charwidth = fontMetrics().horizontalAdvance(QLatin1Char('9'));
     this->charheight = fontMetrics().height();
-
-    int service_symbol_width = ADR_LENGTH * this->charwidth + GAP_ADR_HEX + GAP_HEX_ASCII;
-
-    this->bytes_per_line = (this->size().width() - service_symbol_width) / (4 * this->charwidth) - 1; // 4 symbols per byte
 
     this->pos_addr = 0;
     this->pos_hex = ADR_LENGTH * this->charwidth + GAP_ADR_HEX;

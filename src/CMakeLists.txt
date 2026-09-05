@@ -35,10 +35,11 @@ if(NOT GIT_HASH)
 endif()
 add_compile_definitions(GIT_HASH="${GIT_HASH}")
 
-# Find Qt5 packages
-find_package(Qt5 REQUIRED COMPONENTS Widgets SerialPort Network Test)
+# Find Qt 6 packages
+find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets SerialPort Network Test)
 
 add_library(cartridge_studio_core STATIC
+    src/firmwarecompatibility.cpp
     src/firmwareupdater.cpp
     src/flashthread.cpp
     src/ioworker.cpp
@@ -52,7 +53,7 @@ target_include_directories(cartridge_studio_core PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
-target_link_libraries(cartridge_studio_core PUBLIC Qt5::Core Qt5::SerialPort)
+target_link_libraries(cartridge_studio_core PUBLIC Qt6::Core Qt6::SerialPort)
 
 add_library(cartridge_studio_ui STATIC
     src/aboutdialog.cpp
@@ -70,7 +71,7 @@ target_include_directories(cartridge_studio_ui PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
-target_link_libraries(cartridge_studio_ui PUBLIC cartridge_studio_core Qt5::Widgets Qt5::Network)
+target_link_libraries(cartridge_studio_ui PUBLIC cartridge_studio_core Qt6::Widgets Qt6::Network)
 
 add_executable(p2000t-cartridge-studio
     src/main.cpp
@@ -143,7 +144,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/tests
     )
-    target_link_libraries(tst_serial_interface PRIVATE cartridge_studio_core Qt5::Test)
+    target_link_libraries(tst_serial_interface PRIVATE cartridge_studio_core Qt6::Test)
     add_test(NAME tst_serial_interface COMMAND tst_serial_interface)
 
     add_executable(tst_worker_threads
@@ -154,7 +155,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/tests
     )
-    target_link_libraries(tst_worker_threads PRIVATE cartridge_studio_core Qt5::Test)
+    target_link_libraries(tst_worker_threads PRIVATE cartridge_studio_core Qt6::Test)
     add_test(NAME tst_worker_threads COMMAND tst_worker_threads)
 
     add_executable(tst_mainwindow
@@ -166,7 +167,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/tests
     )
-    target_link_libraries(tst_mainwindow PRIVATE cartridge_studio_ui Qt5::Test)
+    target_link_libraries(tst_mainwindow PRIVATE cartridge_studio_ui Qt6::Test)
     add_test(NAME tst_mainwindow COMMAND tst_mainwindow)
 
     if(UNIX AND NOT APPLE)

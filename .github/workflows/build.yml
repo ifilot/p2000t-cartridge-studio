@@ -213,10 +213,10 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-qt5-base
-            mingw-w64-x86_64-qt5-serialport
-            mingw-w64-x86_64-qt5-svg
-            mingw-w64-x86_64-qt5-tools
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-qt6-serialport
+            mingw-w64-x86_64-qt6-svg
+            mingw-w64-x86_64-qt6-tools
             file
             git
             unzip
@@ -253,9 +253,17 @@ jobs:
           cp -R build/gui/tools "$stage/"
           install -m 0644 LICENSE "$stage/license.txt"
           install -m 0644 VERSION "$stage/version.txt"
-          windeployqt-qt5 --release --no-angle --no-opengl-sw \
+          windeployqt6 --release --compiler-runtime --no-opengl-sw \
+            --no-translations --include-plugins qmodernwindowsstyle \
             --dir "$stage" "$stage/p2000t-cartridge-studio.exe"
+          bash src/packaging/deploy-mingw-dependencies.sh "$stage"
           file "$stage/p2000t-cartridge-studio.exe" | grep -Fq 'PE32+ executable'
+          test -s "$stage/Qt6Core.dll"
+          test -s "$stage/libgcc_s_seh-1.dll"
+          test -s "$stage/libstdc++-6.dll"
+          test -s "$stage/libwinpthread-1.dll"
+          test -s "$stage/styles/qmodernwindowsstyle.dll"
+          test -z "$(find "$stage" -maxdepth 1 -iname 'Qt5*.dll' -print -quit)"
           test "$(cat "$stage/version.txt")" = "$PRODUCT_VERSION"
           cmake -E compare_files firmware/build/cartridge.hex \
             "$stage/firmware/p2000t-programmable-cartridge-firmware.hex"

@@ -88,6 +88,9 @@ private:
     void add_recent_file(const QString& filename);
     void update_recent_files_menu();
     void show_data(const QString& name, const QByteArray& data);
+    void install_firmware_file(const QString& filename,
+                               const QString& display_name,
+                               bool remember_directory);
     void verify_chip();
     void set_operation_busy(bool busy);
     void raise_error_window(const QString& message);
@@ -108,7 +111,8 @@ private slots:
     void load_default_image();
 
     void read_chip_id();
-    void install_firmware();
+    void select_firmware_file();
+    void install_latest_firmware();
     void read_rom();
     void start_read_rom(const QString& filename);
     void read_bank();

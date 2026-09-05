@@ -23,7 +23,10 @@
 #include "config.h"
 
 #include <QApplication>
+#include <QDebug>
 #include <QIcon>
+#include <QStyle>
+#include <QStyleFactory>
 #include <QStringList>
 #include <QDateTime>
 #include <QString>
@@ -83,6 +86,12 @@ int main(int argc, char *argv[])
 
     CartridgeStudioApplication app(argc, argv);
     app.setWindowIcon(QIcon(PROGRAM_ICON));
+#ifdef Q_OS_WIN
+    if(QStyle* vista_style = QStyleFactory::create(QStringLiteral("windowsvista"))) {
+        app.setStyle(vista_style);
+    }
+#endif
+    qInfo() << "Qt widget style:" << app.style()->objectName();
     qRegisterMetaType<std::vector<uint8_t>>("stdvector_uint8_t");
 
     std::unique_ptr<MainWindow> mainWindow;

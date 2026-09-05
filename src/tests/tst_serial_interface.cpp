@@ -125,6 +125,9 @@ void SerialInterfaceTest::validates_block_arguments()
 
 void SerialInterfaceTest::validates_application_firmware_hex()
 {
+    QCOMPARE(FirmwareUpdater::latest_release_url().toString(),
+             QString("https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/"
+                     "download/p2000t-programmable-cartridge-firmware.hex"));
     const QByteArray valid =
         ":020000040000FA\n"
         ":0400000001020304F2\n"

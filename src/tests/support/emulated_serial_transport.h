@@ -14,7 +14,7 @@
 
 class FirmwareEmulatorBackend;
 
-/** In-memory emulator for the version-matched cartridge firmware protocol. */
+/** In-memory emulator for the versioned cartridge firmware protocol. */
 class EmulatedSerialTransport : public SerialTransport {
 public:
     explicit EmulatedSerialTransport(const std::shared_ptr<FirmwareEmulatorBackend>& backend,

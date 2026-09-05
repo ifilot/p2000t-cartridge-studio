@@ -79,8 +79,10 @@ bool EmulatedSerialTransport::waitForReadyRead(int)
 
 QByteArray EmulatedSerialTransport::readAll()
 {
-    int count = this->read_buffer.size();
-    if(this->read_chunk_size > 0) count = std::min(count, this->read_chunk_size);
+    qsizetype count = this->read_buffer.size();
+    if(this->read_chunk_size > 0) {
+        count = std::min(count, static_cast<qsizetype>(this->read_chunk_size));
+    }
     const QByteArray result = this->read_buffer.left(count);
     this->read_buffer.remove(0, count);
     if(!this->read_buffer.isEmpty()) this->ready_read_pending = true;
@@ -89,7 +91,8 @@ QByteArray EmulatedSerialTransport::readAll()
 
 qint64 EmulatedSerialTransport::bytesAvailable() const
 {
-    return this->read_chunk_size > 0 ? std::min(this->read_buffer.size(), this->read_chunk_size)
+    return this->read_chunk_size > 0 ? std::min(this->read_buffer.size(),
+                                                static_cast<qsizetype>(this->read_chunk_size))
                                     : this->read_buffer.size();
 }
 
@@ -291,20 +294,21 @@ bool FirmwareEmulatorBackend::programRange(uint32_t offset, const QByteArray& da
 {
     std::lock_guard<std::mutex> lock(this->mutex);
     if(offset + static_cast<uint32_t>(data.size()) > static_cast<uint32_t>(this->flash.size())) return false;
-    for(int i = 0; i < data.size(); ++i) {
-        const uint8_t old_value = static_cast<uint8_t>(this->flash[static_cast<int>(offset) + i]);
+    for(qsizetype i = 0; i < data.size(); ++i) {
+        const uint8_t old_value = static_cast<uint8_t>(this->flash[static_cast<qsizetype>(offset) + i]);
         const uint8_t new_value = static_cast<uint8_t>(data[i]);
         if((old_value & new_value) != new_value) return false;
     }
-    std::copy(data.begin(), data.end(), this->flash.begin() + static_cast<int>(offset));
+    std::copy(data.begin(), data.end(), this->flash.begin() + static_cast<qsizetype>(offset));
     return true;
 }
 
 void FirmwareEmulatorBackend::eraseRange(uint32_t offset, int length)
 {
     std::lock_guard<std::mutex> lock(this->mutex);
-    const int count = std::min(length, this->flash.size() - static_cast<int>(offset));
-    std::fill_n(this->flash.begin() + static_cast<int>(offset), count, static_cast<char>(0xFF));
+    const qsizetype start = static_cast<qsizetype>(offset);
+    const qsizetype count = std::min(static_cast<qsizetype>(length), this->flash.size() - start);
+    std::fill_n(this->flash.begin() + start, count, static_cast<char>(0xFF));
 }
 
 uint16_t crc16_xmodem_emulator(const QByteArray& data)

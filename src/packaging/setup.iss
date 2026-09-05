@@ -42,6 +42,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "data\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: files; Name: "{app}\Qt5*.dll"
+
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExecutable}"
 Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExecutable}"; Tasks: desktopicon

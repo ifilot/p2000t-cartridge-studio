@@ -21,8 +21,17 @@ cmake -E copy "$repository_dir/src/assets/icon/p2000t-cartridge-studio.ico" "$st
 cmake -E copy "$repository_dir/LICENSE" "$stage_dir/license.txt"
 cmake -E copy "$repository_dir/VERSION" "$stage_dir/version.txt"
 
-windeployqt-qt5 --release --no-angle --no-opengl-sw \
+windeployqt6 --release --compiler-runtime --no-opengl-sw \
+    --no-translations --include-plugins qmodernwindowsstyle \
     --dir "$stage_dir" "$stage_dir/p2000t-cartridge-studio.exe"
+
+bash "$script_dir/deploy-mingw-dependencies.sh" "$stage_dir"
+
+test -s "$stage_dir/Qt6Core.dll"
+test -s "$stage_dir/libgcc_s_seh-1.dll"
+test -s "$stage_dir/libstdc++-6.dll"
+test -s "$stage_dir/libwinpthread-1.dll"
+test -s "$stage_dir/styles/qmodernwindowsstyle.dll"
 
 MSYS2_ARG_CONV_EXCL='*' \
     "$iscc" "/DAppVersion=$product_version" "$setup_script"

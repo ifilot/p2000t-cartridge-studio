@@ -5,7 +5,8 @@
 [![license](https://img.shields.io/github/license/ifilot/p2000t-cartridge-studio)](LICENSE)
 
 Software for the ATmega32U4-based programmable P2000T cartridge with an
-SST39SF020 flash ROM.
+SST39SF020 flash ROM. The desktop application can install either a local
+firmware image or the latest release downloaded from GitHub.
 
 ## Downloads
 
@@ -17,7 +18,7 @@ SST39SF020 flash ROM.
 
 ## Repository layout
 
-- `src/` — Windows desktop application for reading and programming complete
+- `src/` — Qt 6 Windows desktop application for reading and programming complete
   flash images and individual 16 KiB banks, plus USB bootloader updates.
 - `firmware/` — ATmega32U4 application firmware, LUFA AVR109 bootloader,
   serial protocol, native tests and AVR build tooling.
@@ -25,44 +26,10 @@ SST39SF020 flash ROM.
   tests.
 - `tools/bootloader-installer/` — Windows USBasp preparation utility for the
   initial combined application-and-bootloader installation.
+- `COMPATIBILITY.md` — directional Studio-to-firmware compatibility matrix.
 
 PCB, schematic, fabrication and enclosure sources remain in the separate
 hardware repository.
-
-## Versioning
-
-`VERSION` is the single product version for P2000T Cartridge Studio, the
-ATmega32U4 application, the bootloader, the serial protocol and the cartridge
-preparation utility. Both CMake projects and the firmware Makefiles read it
-directly. Change only this file when preparing a new synchronized release.
-The three components are currently single digits because READINFO retains its
-established fixed 16-byte response.
-
-Release tags use the same value prefixed with `v`, for example `v0.1.0`. A tag
-must exactly match `VERSION`; a matching tag builds, tests and publishes a
-GitHub release automatically.
-
-## Distributed file names
-
-Public binaries use stable, lowercase names without an embedded version. The
-version remains available in the binaries and packaged `version.txt`, while the
-stable names allow GitHub's `/releases/latest/download/` links to keep working:
-
-- `p2000t-programmable-cartridge-firmware.hex` — application firmware
-  installed through the USB bootloader.
-- `p2000t-programmable-cartridge-bootloader.hex` — standalone AVR109
-  bootloader image.
-- `p2000t-programmable-cartridge-factory-image.hex` — combined
-  application and bootloader image for initial ISP preparation.
-- `p2000t-programmable-cartridge-preparation-tool-windows-x64.zip` —
-  Windows USBasp preparation package.
-- `p2000t-cartridge-studio-windows-x64.zip` — portable Windows desktop
-  application.
-- `p2000t-cartridge-studio-windows-x64-setup.exe` — Windows installer with
-  Start-menu integration, optional desktop shortcut and uninstaller.
-
-Short names under `firmware/build/`, such as `combined.hex`, are internal build
-intermediates rather than distributed filenames.
 
 ## Build the firmware under WSL
 
@@ -120,7 +87,7 @@ installed in its standard Windows location.
 
 The [build workflow](.github/workflows/build.yml) compiles and tests the AVR
 application, AVR109 bootloader, bank-test ROMs, Windows preparation tool and
-Windows Qt application on pushes and pull requests. Workflow artifacts use the
+Windows Qt 6 application on pushes and pull requests. Workflow artifacts use the
 same stable names as release assets. Pushing a matching `vX.Y.Z` tag publishes
 those tested outputs as a GitHub release and adds `sha256sums.txt`.
 

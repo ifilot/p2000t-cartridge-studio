@@ -2,6 +2,7 @@
 #define FIRMWAREUPDATER_H
 
 #include <QByteArray>
+#include <QUrl>
 
 #include <cstdint>
 
@@ -14,6 +15,9 @@ struct FirmwareImageInfo {
 class FirmwareUpdater {
 public:
     static constexpr uint32_t BOOTLOADER_START = 0x7000;
+
+    /** Stable GitHub release URL for the newest application firmware. */
+    static QUrl latest_release_url();
 
     /**
      * Validate checksums, record structure and the protected bootloader bound.
