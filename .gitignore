@@ -1,0 +1,73 @@
+# Local agent, editor and IDE state
+/.agents/
+/.codex/
+/.idea/
+/.vs/
+/.vscode/
+*.autosave
+*.swp
+*.user
+*~
+
+# Operating-system metadata
+.DS_Store
+Desktop.ini
+Thumbs.db
+
+# Local environment and test state
+.cache/
+.coverage
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.venv/
+htmlcov/
+venv/
+__pycache__/
+*.py[cod]
+
+# CMake, Ninja and compiler outputs
+build/
+build-*/
+dist/
+/ci-out/
+/ci-input/
+/ci-release/
+/release-assets/
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+DartConfiguration.tcl
+Testing/
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.a
+*.d
+*.dll
+*.dylib
+*.eep
+*.elf
+*.exe
+*.la
+*.lai
+*.lo
+*.map
+*.o
+*.obj
+*.pdb
+*.so
+*.slo
+*.sym
+
+# ATmega32U4 firmware dependencies and outputs
+/firmware/build/
+/firmware/.deps/
+/firmware/backups/
+
+# Windows cartridge-preparation-tool outputs
+/tools/bootloader-installer/build/
+/tools/bootloader-installer/build-cross/
+/tools/bootloader-installer/dist/

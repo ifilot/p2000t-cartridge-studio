@@ -1,0 +1,7 @@
+/build/
+/.deps/
+/backups/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.ps1

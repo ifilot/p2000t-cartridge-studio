@@ -1,0 +1,341 @@
+name: Build all binaries
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: AVR firmware and test ROMs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Read product version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]\.[0-9]\.[0-9]$ ]]; then
+            echo "VERSION must contain three single-digit components" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install AVR and ROM build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            avr-libc \
+            binutils-avr \
+            build-essential \
+            gcc-avr \
+            git \
+            make \
+            python3 \
+            z80asm
+
+      - name: Fetch pinned LUFA source
+        run: sh firmware/fetch-lufa.sh
+
+      - name: Build and test application and bootloader
+        run: make -C firmware -j4 combined test
+
+      - name: Build and test all bank-test ROMs
+        run: |
+          emulator_dir="$RUNNER_TEMP/p2000-bank-z80"
+          git clone https://github.com/superzazu/z80.git "$emulator_dir"
+          git -C "$emulator_dir" checkout --detach d64fe10a2274e5e40019b1086bf7d8990cbc5f23
+          python3 roms/banktest/test.py --emulator-dir "$emulator_dir"
+
+      - name: Verify firmware identity and outputs
+        env:
+          PRODUCT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          strings firmware/build/cartridge.elf | grep -Fx "P2000T-FW v${PRODUCT_VERSION}"
+          test -s firmware/build/cartridge.hex
+          test -s firmware/build/bootloader.hex
+          test -s firmware/build/combined.hex
+          test "$(stat --format=%s firmware/build/bank-test/p2000t-bank-test-16x16k.bin)" -eq 262144
+
+      - name: Stage firmware artifacts
+        run: |
+          mkdir -p ci-out/firmware/bank-test
+          install -m 0644 firmware/build/cartridge.hex \
+            ci-out/firmware/p2000t-programmable-cartridge-firmware.hex
+          install -m 0644 firmware/build/bootloader.hex \
+            ci-out/firmware/p2000t-programmable-cartridge-bootloader.hex
+          install -m 0644 firmware/build/combined.hex \
+            ci-out/firmware/p2000t-programmable-cartridge-factory-image.hex
+          install -m 0644 firmware/build/bank-test/bank-??.bin ci-out/firmware/bank-test/
+          install -m 0644 firmware/build/bank-test/p2000t-bank-test-16x16k.bin \
+            ci-out/firmware/bank-test/p2000t-programmable-cartridge-bank-test.bin
+          install -m 0644 firmware/build/bank-test/manifest.json \
+            ci-out/firmware/bank-test/p2000t-programmable-cartridge-bank-test-manifest.json
+          install -m 0644 VERSION ci-out/firmware/version.txt
+          install -m 0644 LICENSE ci-out/firmware/license.txt
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: p2000t-programmable-cartridge-firmware
+          path: ci-out/firmware/
+          if-no-files-found: error
+          retention-days: 30
+
+  cartridge_preparation_tool:
+    name: Windows cartridge preparation tool
+    needs: firmware
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Download the tested firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-programmable-cartridge-firmware
+          path: ci-input/firmware
+
+      - name: Prepare the factory image input
+        run: |
+          mkdir -p firmware/build
+          install -m 0644 \
+            ci-input/firmware/p2000t-programmable-cartridge-factory-image.hex \
+            firmware/build/combined.hex
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake file mingw-w64 ninja-build unzip
+
+      - name: Cross-compile and package
+        run: |
+          cmake -S tools/bootloader-installer \
+            -B tools/bootloader-installer/build-cross \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
+          cmake --build tools/bootloader-installer/build-cross \
+            --target package_bundle
+
+      - name: Verify executable and portable package
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          executable=tools/bootloader-installer/build-cross/p2000t-programmable-cartridge-preparation-tool.exe
+          package="p2000t-programmable-cartridge-preparation-tool-windows-x64"
+          archive="tools/bootloader-installer/dist/${package}.zip"
+          factory_image="p2000t-programmable-cartridge-factory-image.hex"
+          file "$executable" | grep -Fq 'PE32+ executable'
+          unzip -t "$archive"
+          for required in \
+            p2000t-programmable-cartridge-preparation-tool.exe \
+            "$factory_image" \
+            avrdude.exe \
+            avrdude.conf \
+            avrdude-copying.txt \
+            avrdude-v8.2-source.tar.gz \
+            license.txt \
+            readme.txt \
+            version.txt
+          do
+            unzip -Z1 "$archive" | grep -Fxq "$package/$required"
+          done
+          unzip -p "$archive" "$package/version.txt" | grep -Fxq "$PRODUCT_VERSION"
+          unzip -p "$archive" "$package/$factory_image" | cmp - firmware/build/combined.hex
+
+      - name: Upload cartridge preparation tool
+        uses: actions/upload-artifact@v7
+        with:
+          name: p2000t-programmable-cartridge-preparation-tool-windows-x64
+          path: tools/bootloader-installer/dist/p2000t-programmable-cartridge-preparation-tool-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  gui:
+    name: Windows Qt application
+    needs:
+      - firmware
+      - cartridge_preparation_tool
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Preserve LF line endings
+        shell: bash
+        run: git config --global core.autocrlf input
+
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Download the tested firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-programmable-cartridge-firmware
+          path: ci-input/firmware
+
+      - name: Download cartridge preparation package
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-programmable-cartridge-preparation-tool-windows-x64
+          path: ci-input/installer
+
+      - name: Set up MSYS2 MinGW64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-qt5-base
+            mingw-w64-x86_64-qt5-serialport
+            mingw-w64-x86_64-qt5-svg
+            mingw-w64-x86_64-qt5-tools
+            file
+            git
+            unzip
+
+      - name: Prepare bundled firmware and AVRDUDE
+        run: |
+          package="p2000t-programmable-cartridge-preparation-tool-windows-x64"
+          archive="ci-input/installer/${package}.zip"
+          mkdir -p firmware/build
+          install -m 0644 \
+            ci-input/firmware/p2000t-programmable-cartridge-firmware.hex \
+            firmware/build/cartridge.hex
+          mkdir -p src/tools/avrdude
+          unzip -j "$archive" \
+            "$package/avrdude.exe" \
+            -d src/tools/avrdude
+
+      - name: Build and test GUI
+        run: |
+          cmake -S src -B build/gui -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON
+          cmake --build build/gui
+          ctest --test-dir build/gui --output-on-failure
+
+      - name: Create portable GUI package
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          stage=ci-out/p2000t-cartridge-studio
+          mkdir -p "$stage"
+          install -m 0755 build/gui/p2000t-cartridge-studio.exe "$stage/"
+          cp -R build/gui/firmware "$stage/"
+          cp -R build/gui/tools "$stage/"
+          install -m 0644 LICENSE "$stage/license.txt"
+          install -m 0644 VERSION "$stage/version.txt"
+          windeployqt-qt5 --release --no-angle --no-opengl-sw \
+            --dir "$stage" "$stage/p2000t-cartridge-studio.exe"
+          file "$stage/p2000t-cartridge-studio.exe" | grep -Fq 'PE32+ executable'
+          test "$(cat "$stage/version.txt")" = "$PRODUCT_VERSION"
+          cmp firmware/build/cartridge.hex \
+            "$stage/firmware/p2000t-programmable-cartridge-firmware.hex"
+          cmake -E chdir ci-out cmake -E tar cf \
+            "p2000t-cartridge-studio-windows-x64.zip" \
+            --format=zip p2000t-cartridge-studio
+
+      - name: Upload portable GUI
+        uses: actions/upload-artifact@v7
+        with:
+          name: p2000t-cartridge-studio-windows-x64
+          path: ci-out/p2000t-cartridge-studio-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - firmware
+      - cartridge_preparation_tool
+      - gui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate tag against product version
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          test "$GITHUB_REF_NAME" = "v${PRODUCT_VERSION}"
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-programmable-cartridge-firmware
+          path: ci-release/firmware
+
+      - name: Download cartridge preparation package
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-programmable-cartridge-preparation-tool-windows-x64
+          path: ci-release/preparation-tool
+
+      - name: Download portable GUI package
+        uses: actions/download-artifact@v8
+        with:
+          name: p2000t-cartridge-studio-windows-x64
+          path: ci-release/gui
+
+      - name: Stage stable release assets
+        run: |
+          mkdir -p release-assets
+          install -m 0644 ci-release/firmware/p2000t-programmable-cartridge-firmware.hex release-assets/
+          install -m 0644 ci-release/firmware/p2000t-programmable-cartridge-bootloader.hex release-assets/
+          install -m 0644 ci-release/firmware/p2000t-programmable-cartridge-factory-image.hex release-assets/
+          install -m 0644 ci-release/firmware/bank-test/p2000t-programmable-cartridge-bank-test.bin release-assets/
+          install -m 0644 ci-release/firmware/bank-test/p2000t-programmable-cartridge-bank-test-manifest.json release-assets/
+          install -m 0644 ci-release/firmware/license.txt release-assets/license.txt
+          install -m 0644 ci-release/preparation-tool/p2000t-programmable-cartridge-preparation-tool-windows-x64.zip release-assets/
+          install -m 0644 ci-release/gui/p2000t-cartridge-studio-windows-x64.zip release-assets/
+          cd release-assets
+          sha256sum * > sha256sums.txt
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          assets=(release-assets/*)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --verify-tag \
+              --title "P2000T Cartridge Studio $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
