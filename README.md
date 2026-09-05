@@ -9,7 +9,8 @@ SST39SF020 flash ROM.
 
 ## Downloads
 
-- [P2000T Cartridge Studio for Windows](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-cartridge-studio-windows-x64.zip)
+- [P2000T Cartridge Studio installer for Windows](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-cartridge-studio-windows-x64-setup.exe)
+- [P2000T Cartridge Studio portable ZIP](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-cartridge-studio-windows-x64.zip)
 - [Programmable Cartridge Preparation Tool for Windows](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-programmable-cartridge-preparation-tool-windows-x64.zip)
 - [Application firmware](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-programmable-cartridge-firmware.hex)
 - [Complete factory image](https://github.com/ifilot/p2000t-cartridge-studio/releases/latest/download/p2000t-programmable-cartridge-factory-image.hex)
@@ -57,6 +58,8 @@ stable names allow GitHub's `/releases/latest/download/` links to keep working:
   Windows USBasp preparation package.
 - `p2000t-cartridge-studio-windows-x64.zip` — portable Windows desktop
   application.
+- `p2000t-cartridge-studio-windows-x64-setup.exe` — Windows installer with
+  Start-menu integration, optional desktop shortcut and uninstaller.
 
 Short names under `firmware/build/`, such as `combined.hex`, are internal build
 intermediates rather than distributed filenames.
@@ -98,6 +101,20 @@ The portable Windows package is generated at
 `tools/bootloader-installer/dist/p2000t-programmable-cartridge-preparation-tool-windows-x64.zip`.
 Run the preparation tool on Windows with the cartridge connected through its
 ISP header.
+
+## Build the Windows application and installer
+
+Build the Qt application in an MSYS2 MinGW64 shell as documented in
+[`src/README.md`](src/README.md). After building under `dist/`, create the Inno
+Setup installer with:
+
+```sh
+sh src/packaging/package-local.sh
+```
+
+The installer is generated at
+`dist/p2000t-cartridge-studio-windows-x64-setup.exe`. Inno Setup 6 must be
+installed in its standard Windows location.
 
 ## Continuous integration and releases
 

@@ -22,3 +22,13 @@ From the repository root in an MSYS2 MinGW64 shell:
 /mingw64/bin/ctest.exe --test-dir dist --output-on-failure
 /mingw64/bin/windeployqt-qt5.exe --release --no-angle --no-opengl-sw --dir dist dist/p2000t-cartridge-studio.exe
 ```
+
+With Inno Setup 6 installed in its standard Windows location, build the
+installer from the repository root:
+
+```sh
+sh src/packaging/package-local.sh
+```
+
+This produces
+`dist/p2000t-cartridge-studio-windows-x64-setup.exe`.

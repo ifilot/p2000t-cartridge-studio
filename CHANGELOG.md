@@ -23,6 +23,7 @@ version.
 - Emulator-tested bank-test ROM generator.
 - MSYS2/MinGW and WSL build documentation.
 - GitHub Actions builds, tests, portable artifacts and tag-triggered releases.
+- An Inno Setup Windows installer with upgrade, shortcut and uninstall support.
 
 ### Changed
 

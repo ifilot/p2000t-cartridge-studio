@@ -263,11 +263,32 @@ jobs:
             "p2000t-cartridge-studio-windows-x64.zip" \
             --format=zip p2000t-cartridge-studio
 
-      - name: Upload portable GUI
+      - name: Create Windows installer
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          stage=ci-out/p2000t-cartridge-studio
+          installer_data=src/packaging/data
+          installer=src/packaging/installer/p2000t-cartridge-studio-windows-x64-setup.exe
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          setup_script=$(cygpath -w src/packaging/setup.iss)
+          test -x "$iscc"
+          cmake -E remove_directory "$installer_data"
+          cmake -E copy_directory "$stage" "$installer_data"
+          install -m 0644 src/assets/icon/p2000t-cartridge-studio.ico \
+            "$installer_data/"
+          MSYS2_ARG_CONV_EXCL='*' \
+            "$iscc" "/DAppVersion=$PRODUCT_VERSION" "$setup_script"
+          file "$installer" | grep -Eq 'PE32(\+)? executable'
+          install -m 0755 "$installer" ci-out/
+
+      - name: Upload Windows GUI packages
         uses: actions/upload-artifact@v7
         with:
           name: p2000t-cartridge-studio-windows-x64
-          path: ci-out/p2000t-cartridge-studio-windows-x64.zip
+          path: |
+            ci-out/p2000t-cartridge-studio-windows-x64.zip
+            ci-out/p2000t-cartridge-studio-windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -322,6 +343,7 @@ jobs:
           install -m 0644 ci-release/firmware/license.txt release-assets/license.txt
           install -m 0644 ci-release/preparation-tool/p2000t-programmable-cartridge-preparation-tool-windows-x64.zip release-assets/
           install -m 0644 ci-release/gui/p2000t-cartridge-studio-windows-x64.zip release-assets/
+          install -m 0755 ci-release/gui/p2000t-cartridge-studio-windows-x64-setup.exe release-assets/
           cd release-assets
           sha256sum * > sha256sums.txt
 
