@@ -257,7 +257,7 @@ jobs:
             --dir "$stage" "$stage/p2000t-cartridge-studio.exe"
           file "$stage/p2000t-cartridge-studio.exe" | grep -Fq 'PE32+ executable'
           test "$(cat "$stage/version.txt")" = "$PRODUCT_VERSION"
-          cmp firmware/build/cartridge.hex \
+          cmake -E compare_files firmware/build/cartridge.hex \
             "$stage/firmware/p2000t-programmable-cartridge-firmware.hex"
           cmake -E chdir ci-out cmake -E tar cf \
             "p2000t-cartridge-studio-windows-x64.zip" \
