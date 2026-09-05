@@ -39,6 +39,7 @@ void EVENT_USB_Device_Disconnect(void)
 
 void sst_service(void)
 {
+    wdt_reset();
     CDC_Device_USBTask(&serial);
     USB_USBTask();
 }
@@ -73,10 +74,12 @@ int main(void)
 
     USB_Init();
     sei();
+    wdt_enable(WDTO_2S);
 
     uint16_t last_frame = 0;
     uint8_t response[RESPONSE_MAX];
     for (;;) {
+        wdt_reset();
         bool ready = USB_DeviceState == DEVICE_STATE_Configured &&
             (serial.State.ControlLineStates.HostToDevice & CDC_CONTROL_LINE_OUT_DTR);
         uint16_t frame = USB_Device_GetFrameNumber();

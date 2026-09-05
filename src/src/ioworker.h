@@ -125,6 +125,9 @@ signals:
      */
     void thread_abort(const QString&);
 
+    /** Emitted after an interruption request has been handled at a safe boundary. */
+    void thread_cancelled(const QString&);
+
 };
 
 #endif // IOWORKER_H

@@ -7,6 +7,41 @@ version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-05
+
+### Added
+
+- Add a CRC32-protected application manifest that is generated during the
+  firmware build and checked by both Studio and the bootloader.
+- Add cancellation at safe bank/block boundaries for read, erase, program and
+  verification workers.
+- Add an application watchdog and bootloader transfer timeouts.
+- Add bootloader identity, ATmega32U4 signature and USB serial matching checks
+  before firmware installation.
+- Add a fixed protocol identity plus `READVERS` metadata so product versions
+  are no longer restricted to three single digits.
+
+### Changed
+
+- Run erase operations in worker threads and verify every byte after a
+  complete-chip erase.
+- Keep the 4 KiB AVR109 bootloader focused on application-flash operations;
+  EEPROM and fuse/lock inspection remain ISP responsibilities.
+- Bound and synchronize the diagnostic log shared by GUI and worker threads.
+- Limit downloads to HTTPS, five redirects, 30 seconds and the expected size
+  class while consuming responses incrementally.
+- Require an explicit physical-safety acknowledgement before destructive
+  operations because the current PCB has no MCU-readable slot interlock.
+- Save ROM images and diagnostic logs atomically.
+
+### Fixed
+
+- Reject incomplete or overlapping Intel HEX images and never launch an
+  application whose manifest or CRC is invalid.
+- Detect completed serial writes and invalidate stale GUI connection state
+  after communication failures or physical disconnects.
+- Escape downloaded and local filenames before rendering them as rich text.
+
 ## [0.1.2] - 2026-09-05
 
 ### Changed
@@ -70,7 +105,8 @@ version.
 - Replaced the bundled Consolas font with the operating system's monospace
   font and removed obsolete, unlicensed ROM assets.
 
-[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ifilot/p2000t-cartridge-studio/releases/tag/v0.1.0

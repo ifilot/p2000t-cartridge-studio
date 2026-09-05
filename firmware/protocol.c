@@ -3,8 +3,11 @@
 #ifndef P2000T_VERSION
 #error P2000T_VERSION must be supplied by the firmware build
 #endif
-#define BOARD_INFO "P2000T-FW v" P2000T_VERSION
+#define BOARD_INFO "P2000T-FW p01.00"
 _Static_assert(sizeof(BOARD_INFO) - 1 == 16, "READINFO must be exactly 16 bytes");
+#if P2000T_VERSION_MAJOR > 255 || P2000T_VERSION_MINOR > 255 || P2000T_VERSION_PATCH > 255
+#error Firmware semantic-version components must fit in one byte
+#endif
 void protocol_reset(protocol_t *p) { p->used = 0; p->idle_ms = 0; p->writing = false; p->failed = false; p->bank_read_pending = false; p->received = 0; }
 bool protocol_tick(protocol_t *p, uint16_t ms)
 {
@@ -83,6 +86,12 @@ uint16_t protocol_feed(protocol_t *p, uint8_t byte, uint8_t out[RESPONSE_MAX], c
     memcpy(out, p->command, 8);
     p->used = 0;
     if (!memcmp(out, "READINFO", 8)) { memcpy(out + 8, BOARD_INFO, sizeof(BOARD_INFO) - 1); return 8 + sizeof(BOARD_INFO) - 1; }
+    if (!memcmp(out, "READVERS", 8)) {
+        out[8] = P2000T_VERSION_MAJOR;
+        out[9] = P2000T_VERSION_MINOR;
+        out[10] = P2000T_VERSION_PATCH;
+        return 11;
+    }
     if (!memcmp(out, "DEVIDSST", 8)) { ops->read_id(out + 8); return 10; }
     if (!memcmp(out, "BOOTLOAD", 8)) { out[8] = 0; ops->boot(); return 9; }
     if (!memcmp(out, "ERASEALL", 8)) { out[8] = ops->erase(); return 9; }

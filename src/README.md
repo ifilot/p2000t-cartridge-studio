@@ -11,8 +11,10 @@ P2000T ROM images are exactly 16 KiB and can be read, erased or written to any
 of the sixteen cartridge banks. Complete 256 KiB flash images can separately
 be read to a file, erased, or programmed and verified. Application-only Intel
 HEX firmware can be installed through the protected USB AVR109 bootloader.
-Firmware images are checksum-validated and rejected if any data reaches the
-bootloader region beginning at address `0x7000`. The Windows package includes
+Firmware images require a valid application manifest and CRC32, and are
+rejected if data is unprotected or reaches the bootloader region beginning at
+address `0x7000`. Latest-release downloads are also checked against the
+published SHA-256 manifest. The Windows package includes
 the official AVRDUDE 8.2 executable and configuration under `tools/avrdude`.
 The firmware menu can either select a local HEX file or download the latest
 release directly from the project's stable GitHub `releases/latest` URL before

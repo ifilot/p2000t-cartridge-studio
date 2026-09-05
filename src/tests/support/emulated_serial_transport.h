@@ -28,6 +28,7 @@ public:
     qint64 write(const char* data, qint64 max_size) override;
     qint64 write(const QByteArray& data) override;
     bool waitForBytesWritten(int msecs) override;
+    qint64 bytesToWrite() const override;
     bool waitForReadyRead(int msecs) override;
     QByteArray readAll() override;
     qint64 bytesAvailable() const override;

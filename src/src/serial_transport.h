@@ -70,6 +70,9 @@ public:
      */
     virtual bool waitForBytesWritten(int msecs) = 0;
 
+    /** Return bytes still queued for transmission. */
+    virtual qint64 bytesToWrite() const = 0;
+
     /**
      * @brief Wait for new bytes to arrive.
      * @param msecs timeout in milliseconds

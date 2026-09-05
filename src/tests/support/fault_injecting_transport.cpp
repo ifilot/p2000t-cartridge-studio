@@ -54,6 +54,10 @@ bool FaultInjectingTransport::waitForBytesWritten(int msecs) {
     return this->inner->waitForBytesWritten(msecs);
 }
 
+qint64 FaultInjectingTransport::bytesToWrite() const {
+    return this->inner->bytesToWrite();
+}
+
 bool FaultInjectingTransport::waitForReadyRead(int msecs) {
     if(this->active_fault && this->fault_mode == FaultMode::SuppressResponse) {
         return false;

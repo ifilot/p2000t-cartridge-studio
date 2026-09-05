@@ -68,7 +68,8 @@ qint64 EmulatedSerialTransport::write(const QByteArray& data)
     return this->write(data.constData(), data.size());
 }
 
-bool EmulatedSerialTransport::waitForBytesWritten(int) { return false; }
+bool EmulatedSerialTransport::waitForBytesWritten(int) { return true; }
+qint64 EmulatedSerialTransport::bytesToWrite() const { return 0; }
 
 bool EmulatedSerialTransport::waitForReadyRead(int)
 {
@@ -129,6 +130,12 @@ void EmulatedSerialTransport::process_write_buffer()
 
         if(command == "READINFO") {
             this->queue_response(this->backend->boardInfo());
+        } else if(command == "READVERS") {
+            QByteArray version;
+            version.append(static_cast<char>(P2000T_VERSION_MAJOR));
+            version.append(static_cast<char>(P2000T_VERSION_MINOR));
+            version.append(static_cast<char>(P2000T_VERSION_PATCH));
+            this->queue_response(version);
         } else if(command == "DEVIDSST") {
             const uint16_t id = this->backend->chipId();
             QByteArray response;

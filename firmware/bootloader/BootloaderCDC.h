@@ -61,10 +61,10 @@
 
 	/* Macros: */
 		/** Version major of the CDC bootloader. */
-		#define BOOTLOADER_VERSION_MAJOR     P2000T_VERSION_MAJOR
+		#define BOOTLOADER_VERSION_MAJOR     1
 
 		/** Version minor of the CDC bootloader. */
-		#define BOOTLOADER_VERSION_MINOR     P2000T_VERSION_MINOR
+		#define BOOTLOADER_VERSION_MINOR     0
 
 		/** Hardware version major of the CDC bootloader. */
 		#define BOOTLOADER_HWVERSION_MAJOR   0x01
@@ -73,7 +73,7 @@
 		#define BOOTLOADER_HWVERSION_MINOR   0x00
 
 		/** Eight character bootloader firmware identifier reported to the host when requested. */
-		#define SOFTWARE_IDENTIFIER          "LUFACDC"
+			#define SOFTWARE_IDENTIFIER          "P2KBOOT"
 
 		/** Magic bootloader key to unlock forced application start mode. */
 		#define MAGIC_BOOT_KEY               0xDC42
@@ -139,6 +139,6 @@
 			#endif
 			static uint8_t FetchNextCommandByte(void);
 			static void    WriteNextResponseByte(const uint8_t Response);
-		#endif
+			#endif
 
 #endif

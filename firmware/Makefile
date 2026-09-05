@@ -5,9 +5,9 @@ TARGET := build/cartridge
 VERSION_FILE := ../VERSION
 SOFTWARE_VERSION := $(strip $(shell sed -n '1p' $(VERSION_FILE)))
 VERSION_PARTS := $(subst ., ,$(SOFTWARE_VERSION))
-VERSION_DIGITS := 0 1 2 3 4 5 6 7 8 9
-ifneq ($(words $(filter $(VERSION_DIGITS),$(VERSION_PARTS))),3)
-$(error $(VERSION_FILE) must contain three single-digit components such as 0.1.0)
+VERSION_VALID := $(shell printf '%s\n' '$(SOFTWARE_VERSION)' | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' && echo yes)
+ifneq ($(VERSION_VALID),yes)
+$(error $(VERSION_FILE) must contain three numeric components such as 0.12.0)
 endif
 VERSION_MAJOR := $(word 1,$(VERSION_PARTS))
 VERSION_MINOR := $(word 2,$(VERSION_PARTS))
@@ -36,8 +36,10 @@ CFLAGS := -mmcu=$(MCU) -std=gnu99 -Os -g -Wall -Wextra \
 all: $(TARGET).hex size
 $(TARGET).elf: $(OBJECTS)
 	avr-gcc -mmcu=$(MCU) -Wl,--defsym=__stack=0xafd,--gc-sections,-Map=$(TARGET).map $^ -o $@
-$(TARGET).hex: $(TARGET).elf
+$(TARGET).raw.hex: $(TARGET).elf
 	avr-objcopy -O ihex -R .eeprom $< $@
+$(TARGET).hex: $(TARGET).raw.hex tools/application_image.py tools/hex_image.py
+	python3 tools/application_image.py $< $@
 build/%.o: %.c
 	@mkdir -p $(dir $@)
 	avr-gcc $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -51,6 +53,7 @@ clean:
 .PHONY: test
 test: build/test-protocol
 	./build/test-protocol
+	python3 -m unittest tests/test_application_image.py
 build/test-protocol: tests/test_protocol.c protocol.c protocol.h $(VERSION_FILE)
 	@mkdir -p build
 	gcc -std=c99 -Wall -Wextra -Werror -I. $(VERSION_FLAGS) tests/test_protocol.c protocol.c -o $@

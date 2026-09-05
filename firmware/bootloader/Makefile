@@ -4,9 +4,9 @@ LUFA_PATH := ../.deps/lufa/LUFA
 VERSION_FILE := ../../VERSION
 SOFTWARE_VERSION := $(strip $(shell sed -n '1p' $(VERSION_FILE)))
 VERSION_PARTS := $(subst ., ,$(SOFTWARE_VERSION))
-VERSION_DIGITS := 0 1 2 3 4 5 6 7 8 9
-ifneq ($(words $(filter $(VERSION_DIGITS),$(VERSION_PARTS))),3)
-$(error $(VERSION_FILE) must contain three single-digit components such as 0.1.0)
+VERSION_VALID := $(shell printf '%s\n' '$(SOFTWARE_VERSION)' | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' && echo yes)
+ifneq ($(VERSION_VALID),yes)
+$(error $(VERSION_FILE) must contain three numeric components such as 0.12.0)
 endif
 VERSION_MAJOR := $(word 1,$(VERSION_PARTS))
 VERSION_MINOR := $(word 2,$(VERSION_PARTS))

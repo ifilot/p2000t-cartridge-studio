@@ -82,6 +82,10 @@ bool QtSerialTransport::waitForBytesWritten(int msecs) {
     return this->port->waitForBytesWritten(msecs);
 }
 
+qint64 QtSerialTransport::bytesToWrite() const {
+    return this->port->bytesToWrite();
+}
+
 /**
  * @brief Wait for new bytes to arrive.
  * @param msecs timeout in milliseconds

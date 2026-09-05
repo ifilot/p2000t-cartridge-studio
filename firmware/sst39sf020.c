@@ -187,8 +187,19 @@ uint8_t sst_erase(void)
         _delay_ms(1);
         sst_service();
     }
+    if (!attempts) { idle(); return 4; }
+
+    /* Completion polling at one address does not prove that every sector was
+       erased. Blank-check the complete device before reporting success. */
+    uint8_t data[256];
+    for (uint16_t block = 0; block < 1024; ++block) {
+        if (sst_read_block(block, data)) { idle(); return 5; }
+        for (uint16_t offset = 0; offset < sizeof(data); ++offset)
+            if (data[offset] != 0xff) { idle(); return 5; }
+        sst_service();
+    }
     idle();
-    return attempts ? 0 : 4;
+    return 0;
 }
 
 static uint8_t erase_sector(uint32_t start)

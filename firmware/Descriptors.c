@@ -56,7 +56,7 @@ const USB_Descriptor_Device_t PROGMEM DeviceDescriptor =
 
 	.VendorID               = 0x03EB,
 	.ProductID              = 0x2044,
-	.ReleaseNumber          = VERSION_BCD(P2000T_VERSION_MAJOR, P2000T_VERSION_MINOR, P2000T_VERSION_PATCH),
+	.ReleaseNumber          = VERSION_BCD(1,0,0),
 
 	.ManufacturerStrIndex   = STRING_ID_Manufacturer,
 	.ProductStrIndex        = STRING_ID_Product,

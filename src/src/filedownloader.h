@@ -26,8 +26,9 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
-#include <QDebug>
+#include <QPointer>
 #include <QString>
+#include <QTimer>
 
 class FileDownloader : public QObject
 {
@@ -38,7 +39,8 @@ public:
      * @param url source URL
      * @param parent parent object
      */
-    explicit FileDownloader(QUrl url, QObject *parent = 0);
+    explicit FileDownloader(QUrl url, QObject *parent = nullptr,
+                            qint64 maximum_bytes = 1024 * 1024);
 
     /**
      * @brief Destroy the downloader.
@@ -63,6 +65,10 @@ public:
      */
     QString errorMessage() const;
 
+public slots:
+    /** Cancel the in-flight request. The downloaded signal is still emitted. */
+    void cancel();
+
 signals:
     /**
      * @brief Signal emitted when the transfer finishes.
@@ -75,12 +81,21 @@ private slots:
      * @param pReply reply object
      */
     void fileDownloaded(QNetworkReply* pReply);
+    void readAvailableData();
+
 private:
+    void startRequest(const QUrl& url);
+    void finishFailure(const QString& message);
+
     QNetworkAccessManager m_WebCtrl;
+    QPointer<QNetworkReply> m_Reply;
+    QTimer m_Timeout;
     QByteArray m_DownloadedData;
     bool m_Success = false;
+    bool m_Finished = false;
     QString m_ErrorMessage;
     int m_RedirectCount = 0;
+    qint64 m_MaximumBytes;
 };
 
 #endif // FILEDOWNLOADER_H

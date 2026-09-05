@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 set(P2000T_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION")
 file(STRINGS "${P2000T_VERSION_FILE}" P2000T_VERSION LIMIT_COUNT 1)
-if(NOT P2000T_VERSION MATCHES "^[0-9]\\.[0-9]\\.[0-9]$")
-    message(FATAL_ERROR "VERSION must contain three single-digit components such as 0.1.0")
+if(NOT P2000T_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+    message(FATAL_ERROR "VERSION must contain three numeric components such as 0.12.0")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${P2000T_VERSION_FILE}")
 

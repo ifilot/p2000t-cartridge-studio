@@ -21,6 +21,8 @@ private slots:
     void erase_programs_single_bank();
     void rejects_other_chips();
     void surfaces_serial_errors();
+    void honours_read_cancellation();
+    void erases_without_programming();
 };
 
 void WorkerThreadTest::reads_complete_sst39sf020()
@@ -129,6 +131,39 @@ void WorkerThreadTest::surfaces_serial_errors()
     QVERIFY(thread.wait(2000));
     QCOMPARE(abort.count(), 1);
     QVERIFY(abort.takeFirst().at(0).toString().contains("No port has been set"));
+}
+
+void WorkerThreadTest::honours_read_cancellation()
+{
+    auto backend = std::make_shared<FirmwareEmulatorBackend>();
+    auto serial = std::make_shared<SerialInterface>("emu", [backend](const std::string&) {
+        return backend->create_transport(1);
+    });
+    ReadThread thread(serial);
+    QSignalSpy cancelled(&thread, &ReadThread::thread_cancelled);
+    QSignalSpy ready(&thread, &ReadThread::read_result_ready);
+    thread.start();
+    QVERIFY(thread.isRunning());
+    thread.requestInterruption();
+    QVERIFY(thread.wait(2000));
+    QCOMPARE(cancelled.count(), 1);
+    QCOMPARE(ready.count(), 0);
+}
+
+void WorkerThreadTest::erases_without_programming()
+{
+    auto backend = std::make_shared<FirmwareEmulatorBackend>(QByteArray(ROMSIZE, '\0'));
+    auto serial = std::make_shared<SerialInterface>("emu", factory(backend));
+    FlashThread thread(serial);
+    thread.set_erase_bank(4);
+    QSignalSpy erased(&thread, &FlashThread::erase_result_ready);
+    QSignalSpy programmed(&thread, &FlashThread::flash_result_ready);
+    thread.start();
+    QVERIFY(thread.wait(2000));
+    QCOMPARE(erased.count(), 1);
+    QCOMPARE(programmed.count(), 0);
+    QCOMPARE(backend->flashContents().mid(4 * BANKSIZE, BANKSIZE),
+             QByteArray(BANKSIZE, static_cast<char>(0xFF)));
 }
 
 QTEST_MAIN(WorkerThreadTest)

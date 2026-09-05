@@ -20,13 +20,13 @@ def read_hex(path):
                 if absolute in result:
                     raise ValueError('Overlapping HEX records')
                 result[absolute] = value
-        elif kind == 1:
+        elif kind == 1 and addr == 0 and not data:
             ended = True
-        elif kind == 2 and len(data) == 2:
+        elif kind == 2 and addr == 0 and len(data) == 2:
             base = int.from_bytes(data, 'big') << 4
-        elif kind == 4 and len(data) == 2:
+        elif kind == 4 and addr == 0 and len(data) == 2:
             base = int.from_bytes(data, 'big') << 16
-        elif kind in (3, 5) and len(data) == 4:
+        elif kind in (3, 5) and addr == 0 and len(data) == 4:
             pass  # start-address metadata; physical flash addresses are in data records
         else:
             raise ValueError(f'Unsupported HEX record {kind}')
@@ -35,21 +35,31 @@ def read_hex(path):
     return result
 
 
-def combine(app_path, boot_path, output):
-    app, boot = read_hex(app_path), read_hex(boot_path)
-    if min(app) != 0 or max(app) >= 0x7000:
-        raise ValueError('Application must fit below bootloader at 0x7000')
-    if min(boot) != 0x7000 or max(boot) >= 0x8000:
-        raise ValueError('Bootloader must fit within 0x7000..0x7fff')
-    memory = app | boot
+def write_hex(memory, output):
     lines = []
-    for address in range(0, 0x8000, 16):
+    if any(address < 0 or address >= 0x10000 for address in memory):
+        raise ValueError('Only the ATmega32U4 16-bit flash address space is supported')
+    first = min(memory) & ~0x0f
+    last = max(memory) | 0x0f
+    for address in range(first, last + 1, 16):
         if not any(a in memory for a in range(address, address + 16)):
             continue
         data = bytes(memory.get(a, 255) for a in range(address, address + 16))
         row = bytes([16, address >> 8, address & 255, 0]) + data
         lines.append(':' + (row + bytes([-sum(row) & 255])).hex().upper())
     Path(output).write_text('\n'.join(lines + [':00000001FF']) + '\n')
+
+
+def combine(app_path, boot_path, output):
+    app, boot = read_hex(app_path), read_hex(boot_path)
+    from application_image import validate
+    validate(app)
+    if min(app) != 0 or max(app) >= 0x7000:
+        raise ValueError('Application and manifest must fit below bootloader at 0x7000')
+    if min(boot) != 0x7000 or max(boot) >= 0x8000:
+        raise ValueError('Bootloader must fit within 0x7000..0x7fff')
+    memory = app | boot
+    write_hex(memory, output)
     print(f'Validated app ({len(app)} bytes) and bootloader ({len(boot)} bytes).')
 
 

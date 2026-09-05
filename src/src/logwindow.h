@@ -29,6 +29,8 @@
 
 #include <memory>
 
+#include "logbuffer.h"
+
 class LogWindow : public QWidget {
     Q_OBJECT
 
@@ -41,7 +43,7 @@ private:
         Unknown
     };
 
-    std::shared_ptr<QStringList> log_messages;
+    std::shared_ptr<LogBuffer> log_messages;
     QPlainTextEdit* text_box = nullptr;
     QLabel* status_label = nullptr;
     QLabel* live_badge = nullptr;
@@ -59,9 +61,9 @@ public:
 
     /**
      * @brief Construct a live, filterable view of the captured log messages.
-     * @param _log_messages shared list with captured log lines
+     * @param _log_messages shared thread-safe store with captured log lines
      */
-    explicit LogWindow(const std::shared_ptr<QStringList>& _log_messages);
+    explicit LogWindow(const std::shared_ptr<LogBuffer>& _log_messages);
 
 private:
     Severity severity_of(const QString& line) const;

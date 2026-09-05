@@ -3,7 +3,7 @@
 #include <string.h>
 #include "protocol.h"
 
-#define BOARD_INFO "P2000T-FW v" P2000T_VERSION
+#define BOARD_INFO "P2000T-FW p01.00"
 
 static unsigned id_calls;
 static void identify(uint8_t id[2]) { ++id_calls; id[0] = 0xbf; id[1] = 0xb6; }
@@ -40,6 +40,11 @@ int main(void)
     assert(id_calls == 7);
     assert(send("\r\nREADINFO\r\n", 12) == 24);
     assert(!memcmp(response, "READINFO" BOARD_INFO, 24));
+    assert(send("READVERS", 8) == 11);
+    assert(!memcmp(response, "READVERS", 8));
+    assert(response[8] == P2000T_VERSION_MAJOR &&
+           response[9] == P2000T_VERSION_MINOR &&
+           response[10] == P2000T_VERSION_PATCH);
     assert(send("BADCMAND", 8) == 16);
     assert(!memcmp(response, "BADCMANDERRORCMD", 16));
     assert(id_calls == 7); /* unsupported/destructive commands never touch flash */

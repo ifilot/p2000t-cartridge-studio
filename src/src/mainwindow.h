@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "flashthread.h"
+#include "logbuffer.h"
 #include "readthread.h"
 #include "serial_interface.h"
 
@@ -23,6 +24,7 @@ class QGroupBox;
 class QMenu;
 class QProgressBar;
 class QPushButton;
+class QTimer;
 class QVBoxLayout;
 class LogWindow;
 class SettingsWidget;
@@ -33,7 +35,7 @@ class MainWindow : public QMainWindow {
 public:
     using SerialInterfaceFactory = std::function<std::shared_ptr<SerialInterface>(const std::string&)>;
 
-    MainWindow(const std::shared_ptr<QStringList> log_messages,
+    MainWindow(const std::shared_ptr<LogBuffer> log_messages,
                QWidget* parent = nullptr,
                SerialInterfaceFactory serial_interface_factory = nullptr);
     ~MainWindow() override;
@@ -56,14 +58,16 @@ private:
     QPushButton* button_write_bank = nullptr;
     QPushButton* button_erase_bank = nullptr;
     QPushButton* button_reload_file = nullptr;
+    QPushButton* button_cancel_operation = nullptr;
     BankSelector* bank_selector = nullptr;
     QProgressBar* progress_bar_load = nullptr;
     QGroupBox* rom_container = nullptr;
     QMenu* recent_files_menu = nullptr;
+    QTimer* device_monitor = nullptr;
 
     std::unique_ptr<LogWindow> log_window;
     std::unique_ptr<SettingsWidget> settings_widget;
-    std::shared_ptr<QStringList> log_messages;
+    std::shared_ptr<LogBuffer> log_messages;
     std::shared_ptr<SerialInterface> serial_interface;
     std::unique_ptr<ReadThread> readerthread;
     std::unique_ptr<FlashThread> flashthread;
@@ -73,12 +77,15 @@ private:
     QElapsedTimer operation_timer;
     QString current_filename;
     QString complete_read_filename;
+    QString selected_device_serial;
     QByteArray flash_data;
     enum class FlashScope { CompleteRom, Bank };
     FlashScope flash_scope = FlashScope::CompleteRom;
     unsigned int active_bank = 0;
     bool board_connected = false;
     bool chip_identified = false;
+    bool operation_busy = false;
+    bool monitor_physical_port = true;
 
     void create_dropdown_menu();
     void build_serial_interface_menu(QVBoxLayout* target_layout);
@@ -92,7 +99,8 @@ private:
                                const QString& display_name,
                                bool remember_directory);
     void verify_chip();
-    void set_operation_busy(bool busy);
+    void invalidate_connection(const QString& reason = {});
+    void set_operation_busy(bool busy, bool cancellable = false);
     void raise_error_window(const QString& message);
 
 private slots:
@@ -108,6 +116,7 @@ private slots:
 
     void scan_com_devices();
     void select_com_port();
+    void check_device_presence();
     void load_default_image();
 
     void read_chip_id();
@@ -129,6 +138,9 @@ private slots:
     void verify_result_ready();
     void erase_chip();
     void erase_bank();
+    void erase_result_ready();
+    void cancel_operation();
+    void thread_cancelled(const QString& message);
     void thread_abort(const QString& error);
 };
 

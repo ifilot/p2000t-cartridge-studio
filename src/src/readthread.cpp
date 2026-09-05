@@ -25,9 +25,21 @@ void ReadThread::run()
         }
 
         for(unsigned int offset = 0; offset < this->bank_count; ++offset) {
+            if(this->isInterruptionRequested()) {
+                this->serial_interface->close_port();
+                emit(thread_cancelled(QStringLiteral("Read cancelled after %1 of %2 banks")
+                    .arg(offset).arg(this->bank_count)));
+                return;
+            }
             emit(read_bank_start(offset, this->bank_count));
             this->data.append(this->serial_interface->read_bank(this->first_bank + offset));
             emit(read_bank_done(offset, this->bank_count));
+        }
+
+        if(this->isInterruptionRequested()) {
+            this->serial_interface->close_port();
+            emit(thread_cancelled(QStringLiteral("Read cancelled")));
+            return;
         }
 
         this->serial_interface->close_port();
