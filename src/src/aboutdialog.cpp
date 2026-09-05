@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSysInfo>
 #include <QTextBrowser>
@@ -51,9 +52,15 @@ AboutDialog::AboutDialog(QWidget *parent)
 
     auto *header_layout = new QHBoxLayout();
     auto *icon_label = new QLabel(this);
-    icon_label->setPixmap(QIcon(PROGRAM_ICON).pixmap(72, 72));
+    icon_label->setObjectName("aboutApplicationIcon");
+    constexpr int about_icon_size = 112;
+    icon_label->setPixmap(QPixmap(PROGRAM_ICON).scaled(
+        about_icon_size,
+        about_icon_size,
+        Qt::KeepAspectRatio,
+        Qt::SmoothTransformation));
     icon_label->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
-    icon_label->setFixedWidth(88);
+    icon_label->setFixedWidth(about_icon_size + 16);
     header_layout->addWidget(icon_label);
 
     auto *title_layout = new QVBoxLayout();

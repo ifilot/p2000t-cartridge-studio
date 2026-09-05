@@ -1098,9 +1098,9 @@ void MainWindow::load_default_image()
 
 void MainWindow::show_data(const QString& name, const QByteArray& data)
 {
-    const QString sha = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
-    this->label_data_descriptor->setText(tr("<b>%1</b> | Size: %2 KiB / 16 KiB | SHA-256: %3")
-        .arg(name).arg(data.size() / 1024.0, 0, 'f', 1).arg(sha));
+    const QString md5 = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
+    this->label_data_descriptor->setText(tr("<b>%1</b> | Size: %2 KiB | MD5: %3")
+        .arg(name).arg(data.size() / 1024.0, 0, 'f', 1).arg(md5));
 }
 
 void MainWindow::set_operation_busy(bool busy)

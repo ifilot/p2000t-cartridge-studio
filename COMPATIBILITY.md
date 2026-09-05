@@ -9,6 +9,7 @@ directional matrix below.
 | --- | --- | --- |
 | 0.1.0 | 0.1.0 | Initial release required an exact version match. |
 | 0.1.1 | 0.1.0, 0.1.1 | The serial command set is unchanged. |
+| 0.1.2 | 0.1.0, 0.1.1, 0.1.2 | The serial command set is unchanged. |
 
 “Supported” means that the listed Studio release accepts and has been tested
 against the listed firmware release. A future release must add its supported

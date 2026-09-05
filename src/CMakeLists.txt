@@ -83,6 +83,9 @@ if(WIN32)
     target_sources(p2000t-cartridge-studio PRIVATE
         appicon.rc
     )
+    set_property(SOURCE appicon.rc APPEND PROPERTY OBJECT_DEPENDS
+        "${CMAKE_CURRENT_LIST_DIR}/assets/icon/p2000t-cartridge-studio.ico"
+    )
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")

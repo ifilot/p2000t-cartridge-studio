@@ -55,6 +55,10 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(dialog.findChild<QGroupBox*>("aboutCartridgeGroup"));
     QVERIFY(dialog.findChild<QGroupBox*>("aboutBuildGroup"));
     QVERIFY(dialog.findChild<QLabel*>("aboutLinks"));
+    const auto* application_icon = dialog.findChild<QLabel*>("aboutApplicationIcon");
+    QVERIFY(application_icon);
+    QVERIFY(!application_icon->pixmap().isNull());
+    QCOMPARE(application_icon->pixmap().size(), QSize(112, 112));
 
     QString visible_text;
     for(const QLabel* label : dialog.findChildren<QLabel*>()) {
@@ -69,7 +73,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -86,7 +90,12 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
     QVERIFY(FirmwareCompatibility::is_supported("0.1.1", "0.1.0"));
     QVERIFY(FirmwareCompatibility::is_supported("0.1.1", "0.1.1"));
     QVERIFY(!FirmwareCompatibility::is_supported("0.1.1", "0.1.2"));
-    QVERIFY(FirmwareCompatibility::supported_firmware_versions("0.1.2").isEmpty());
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.1.2"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2"}));
+    QVERIFY(FirmwareCompatibility::is_supported("0.1.2", "0.1.0"));
+    QVERIFY(FirmwareCompatibility::is_supported("0.1.2", "0.1.1"));
+    QVERIFY(FirmwareCompatibility::is_supported("0.1.2", "0.1.2"));
+    QVERIFY(!FirmwareCompatibility::is_supported("0.1.2", "0.1.3"));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
@@ -177,6 +186,11 @@ void MainWindowTest::reads_selected_bank()
     QMetaObject::invokeMethod(&window, "read_bank", Qt::DirectConnection);
     QTRY_COMPARE_WITH_TIMEOUT(window.findChild<HexViewWidget*>("hexViewWidget")->get_data(), bank, 10000);
     QVERIFY(window.statusBar()->currentMessage().contains("bank 11"));
+    const QString descriptor = window.findChild<QLabel*>("labelDataDescriptor")->text();
+    QVERIFY(descriptor.contains("Size: 16.0 KiB |"));
+    QVERIFY(!descriptor.contains("/ 16 KiB"));
+    QVERIFY(descriptor.contains("MD5: 3ba08696236b8171bb46c9652cda441f"));
+    QVERIFY(!descriptor.contains("SHA-256"));
 }
 
 void MainWindowTest::connects_current_version_and_identifies_sst39sf020()
@@ -202,7 +216,7 @@ void MainWindowTest::connects_compatible_previous_firmware()
     QVERIFY(QMetaObject::invokeMethod(&window, "select_com_port", Qt::DirectConnection));
     QCOMPARE(window.findChild<QLabel*>("labelBoardId")->text(),
              QString("Board: P2000T-FW v0.1.0"));
-    QVERIFY(window.statusBar()->currentMessage().contains("compatible with Studio 0.1.1"));
+    QVERIFY(window.statusBar()->currentMessage().contains("compatible with Studio 0.1.2"));
     QVERIFY(window.findChild<QPushButton*>("buttonIdentifyChip")->isEnabled());
 }
 

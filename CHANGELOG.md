@@ -7,6 +7,17 @@ version.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-05
+
+### Changed
+
+- Display compact MD5 ROM checksums in the data header so the complete value
+  fits beside the filename and image size.
+- Replace the generic cartridge application icon with artwork based on the
+  characteristic shape of an original P2000T cartridge enclosure.
+- Extend the compatibility matrix so Studio 0.1.2 accepts firmware 0.1.0,
+  0.1.1 and 0.1.2.
+
 ## [0.1.1] - 2026-09-05
 
 ### Changed
@@ -59,6 +70,7 @@ version.
 - Replaced the bundled Consolas font with the operating system's monospace
   font and removed obsolete, unlicensed ROM assets.
 
-[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ifilot/p2000t-cartridge-studio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ifilot/p2000t-cartridge-studio/releases/tag/v0.1.0

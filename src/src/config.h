@@ -25,7 +25,7 @@
 
 #define PROGRAM_NAME "P2000T Cartridge Studio"
 #define PROGRAM_VERSION P2000T_VERSION
-#define PROGRAM_ICON ":/assets/icon/p2000t-cartridge-studio.ico"
+#define PROGRAM_ICON ":/assets/icon/p2000t-cartridge-studio.png"
 #define UNUSED(x) (void)(x)
 
 #endif // _CONFIG_H

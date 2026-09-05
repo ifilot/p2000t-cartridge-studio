@@ -82,7 +82,6 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain("retrohacks.nl");
     QCoreApplication::setApplicationName(PROGRAM_NAME);
     QCoreApplication::setApplicationVersion(PROGRAM_VERSION);
-    QApplication::setWindowIcon(QIcon(PROGRAM_ICON));
 
     CartridgeStudioApplication app(argc, argv);
     app.setWindowIcon(QIcon(PROGRAM_ICON));

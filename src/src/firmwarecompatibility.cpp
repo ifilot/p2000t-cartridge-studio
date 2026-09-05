@@ -13,10 +13,13 @@ struct CompatibilityPair {
 
 // This is intentionally explicit. Product versions identify releases; they do
 // not by themselves determine whether the serial command set is compatible.
-constexpr std::array<CompatibilityPair, 3> COMPATIBILITY_MATRIX{{
+constexpr std::array<CompatibilityPair, 6> COMPATIBILITY_MATRIX{{
     {"0.1.0", "0.1.0"},
     {"0.1.1", "0.1.0"},
     {"0.1.1", "0.1.1"},
+    {"0.1.2", "0.1.0"},
+    {"0.1.2", "0.1.1"},
+    {"0.1.2", "0.1.2"},
 }};
 
 } // namespace
