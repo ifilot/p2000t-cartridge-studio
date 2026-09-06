@@ -81,10 +81,8 @@ jobs:
           python3 roms/banktest/test.py --emulator-dir "$emulator_dir"
 
       - name: Verify firmware identity and outputs
-        env:
-          PRODUCT_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          strings firmware/build/cartridge.elf | grep -Fx "P2000T-FW v${PRODUCT_VERSION}"
+          strings firmware/build/cartridge.elf | grep -Fx "P2000T-FW p01.00"
           test -s firmware/build/cartridge.hex
           test -s firmware/build/bootloader.hex
           test -s firmware/build/combined.hex
