@@ -35,6 +35,7 @@
 
 #define  INCLUDE_FROM_BOOTLOADERCDC_C
 #include "BootloaderCDC.h"
+#include "../application_image.h"
 
 /** Contains the current baud rate and other settings of the first virtual serial port. This must be retained as some
  *  operating systems will not open the port unless the settings can be set successfully.
@@ -64,6 +65,44 @@ static bool RunBootloader = true;
 #define MagicBootKey (*(volatile uint16_t*)0x0afe)
 static bool StayInBootloader ATTR_NO_INIT;
 static volatile uint8_t BootTicks;
+static volatile uint8_t TransferTicks;
+
+#define TRANSFER_TIMEOUT_TICKS 8
+
+static bool ApplicationIsValid(void)
+{
+    if (pgm_read_byte_near(APP_MANIFEST_ADDRESS) != 'P' ||
+        pgm_read_byte_near(APP_MANIFEST_ADDRESS + 1) != '2' ||
+        pgm_read_byte_near(APP_MANIFEST_ADDRESS + 2) != 'F' ||
+        pgm_read_byte_near(APP_MANIFEST_ADDRESS + 3) != 'W') return false;
+    if (pgm_read_byte_near(APP_MANIFEST_ADDRESS + 4) != APP_MANIFEST_FORMAT ||
+        pgm_read_byte_near(APP_MANIFEST_ADDRESS + 5) != APP_PROTOCOL_MAJOR ||
+        pgm_read_byte_near(APP_MANIFEST_ADDRESS + 6) != APP_PROTOCOL_MINOR)
+        return false;
+
+    uint32_t length = pgm_read_dword_near(APP_MANIFEST_ADDRESS + 8);
+    if (length < 2 || length > APP_MANIFEST_ADDRESS) return false;
+
+    uint32_t crc = 0xffffffffUL;
+    for (uint32_t address = 0; address < length; ++address) {
+        crc ^= pgm_read_byte_near(address);
+        for (uint8_t bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xedb88320UL : 0);
+    }
+    if (~crc != pgm_read_dword_near(APP_MANIFEST_ADDRESS + 12)) return false;
+    for (uint16_t address = length; address < APP_MANIFEST_ADDRESS; ++address)
+        if (pgm_read_byte_near(address) != 0xff) return false;
+    return true;
+}
+
+static void ResetAfterTransferFailure(void) ATTR_NO_RETURN;
+static void ResetAfterTransferFailure(void)
+{
+    USB_Detach();
+    MagicBootKey = 0;
+    wdt_enable(WDTO_250MS);
+    for (;;) {}
+}
 
 
 /** Special startup routine to check if the bootloader was started via a watchdog reset, and if the magic application
@@ -78,7 +117,7 @@ void Application_Jump_Check(void)
     StayInBootloader = watchdog && key == 0xb007;
     MCUSR = 0;
     wdt_disable();
-    if (watchdog && key == MAGIC_BOOT_KEY && pgm_read_word_near(0) != 0xffff)
+    if (watchdog && key == MAGIC_BOOT_KEY && ApplicationIsValid())
         ((void (*)(void))0)();
 
 }
@@ -102,8 +141,8 @@ int main(void)
 	{
 		CDC_Task();
 		USB_USBTask();
-        if (!StayInBootloader && BootTicks >= 20 && pgm_read_word_near(0) != 0xffff)
-            RunBootloader = false;
+		if (!StayInBootloader && BootTicks >= 20 && ApplicationIsValid())
+			RunBootloader = false;
 	}
 
 	/* Wait a short time to end all USB transactions and then disconnect */
@@ -158,7 +197,8 @@ static void SetupHardware(void)
 ISR(TIMER1_OVF_vect, ISR_BLOCK)
 {
 	LEDs_ToggleLEDs(LEDS_LED1 | LEDS_LED2);
-    if (BootTicks < 255) ++BootTicks;
+	if (BootTicks < 255) ++BootTicks;
+	++TransferTicks;
 }
 
 /** Event handler for the USB_ConfigurationChanged event. This configures the device's endpoints ready
@@ -246,7 +286,7 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 
 	MemoryType =  FetchNextCommandByte();
 
-	if ((MemoryType != MEMORY_TYPE_FLASH) && (MemoryType != MEMORY_TYPE_EEPROM))
+	if (MemoryType != MEMORY_TYPE_FLASH)
 	{
 		/* Send error byte back to the host */
 		WriteNextResponseByte('?');
@@ -256,7 +296,7 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 
     /* Reject malformed writes before any page erase; never write boot flash. */
     if (Command == AVR109_COMMAND_BlockWrite &&
-        (MemoryType != MEMORY_TYPE_FLASH || !BlockSize || BlockSize > SPM_PAGESIZE ||
+        (!BlockSize || BlockSize > SPM_PAGESIZE ||
          (BlockSize & 1) || (CurrAddress & (SPM_PAGESIZE - 1)) ||
          CurrAddress + BlockSize > BOOT_START_ADDR)) {
         while (BlockSize--) FetchNextCommandByte();
@@ -269,9 +309,7 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 	{
 		while (BlockSize--)
 		{
-			if (MemoryType == MEMORY_TYPE_FLASH)
-			{
-				/* Read the next FLASH byte from the current FLASH page */
+			/* Read the next FLASH byte from the current FLASH page */
 				#if (FLASHEND > 0xFFFF)
 				WriteNextResponseByte(pgm_read_byte_far(CurrAddress | HighByte));
 				#else
@@ -283,29 +321,17 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 				  CurrAddress += 2;
 
 				HighByte = !HighByte;
-			}
-			else
-			{
-				/* Read the next EEPROM byte into the endpoint */
-				WriteNextResponseByte(eeprom_read_byte((uint8_t*)(intptr_t)(CurrAddress >> 1)));
-
-				/* Increment the address counter after use */
-				CurrAddress += 2;
-			}
 		}
 	}
 	else
 	{
 		uint32_t PageStartAddress = CurrAddress;
 
-		if (MemoryType == MEMORY_TYPE_FLASH)
-		  BootloaderAPI_ErasePage(PageStartAddress);
+		BootloaderAPI_ErasePage(PageStartAddress);
 
 		while (BlockSize--)
 		{
-			if (MemoryType == MEMORY_TYPE_FLASH)
-			{
-				/* If both bytes in current word have been written, increment the address counter */
+			/* If both bytes in current word have been written, increment the address counter */
 				if (HighByte)
 				{
 					/* Write the next FLASH word to the current FLASH page */
@@ -320,23 +346,9 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 				}
 
 				HighByte = !HighByte;
-			}
-			else
-			{
-				/* Write the next EEPROM byte from the endpoint */
-				eeprom_update_byte((uint8_t*)((intptr_t)(CurrAddress >> 1)), FetchNextCommandByte());
-
-				/* Increment the address counter after use */
-				CurrAddress += 2;
-			}
 		}
 
-		/* If in FLASH programming mode, commit the page after writing */
-		if (MemoryType == MEMORY_TYPE_FLASH)
-		{
-			/* Commit the flash page to memory */
-			BootloaderAPI_WritePage(PageStartAddress);
-		}
+		BootloaderAPI_WritePage(PageStartAddress);
 
 		/* Send response byte back to the host */
 		WriteNextResponseByte('\r');
@@ -351,6 +363,7 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
  */
 static uint8_t FetchNextCommandByte(void)
 {
+	uint8_t StartTick = TransferTicks;
 	/* Select the OUT endpoint so that the next data byte can be read */
 	Endpoint_SelectEndpoint(CDC_RX_EPADDR);
 
@@ -361,8 +374,9 @@ static uint8_t FetchNextCommandByte(void)
 
 		while (!(Endpoint_IsOUTReceived()))
 		{
-			if (USB_DeviceState == DEVICE_STATE_Unattached)
-			  return 0;
+				if (USB_DeviceState == DEVICE_STATE_Unattached ||
+				    (uint8_t)(TransferTicks - StartTick) >= TRANSFER_TIMEOUT_TICKS)
+				  ResetAfterTransferFailure();
 		}
 	}
 
@@ -377,6 +391,7 @@ static uint8_t FetchNextCommandByte(void)
  */
 static void WriteNextResponseByte(const uint8_t Response)
 {
+	uint8_t StartTick = TransferTicks;
 	/* Select the IN endpoint so that the next data byte can be written */
 	Endpoint_SelectEndpoint(CDC_TX_EPADDR);
 
@@ -387,8 +402,9 @@ static void WriteNextResponseByte(const uint8_t Response)
 
 		while (!(Endpoint_IsINReady()))
 		{
-			if (USB_DeviceState == DEVICE_STATE_Unattached)
-			  return;
+				if (USB_DeviceState == DEVICE_STATE_Unattached ||
+				    (uint8_t)(TransferTicks - StartTick) >= TRANSFER_TIMEOUT_TICKS)
+				  ResetAfterTransferFailure();
 		}
 	}
 
@@ -493,22 +509,6 @@ static void CDC_Task(void)
 		WriteNextResponseByte('\r');
 	}
 	#endif
-	else if (Command == AVR109_COMMAND_ReadLockbits)
-	{
-		WriteNextResponseByte(BootloaderAPI_ReadLock());
-	}
-	else if (Command == AVR109_COMMAND_ReadLowFuses)
-	{
-		WriteNextResponseByte(BootloaderAPI_ReadFuse(GET_LOW_FUSE_BITS));
-	}
-	else if (Command == AVR109_COMMAND_ReadHighFuses)
-	{
-		WriteNextResponseByte(BootloaderAPI_ReadFuse(GET_HIGH_FUSE_BITS));
-	}
-	else if (Command == AVR109_COMMAND_ReadExtendedFuses)
-	{
-		WriteNextResponseByte(BootloaderAPI_ReadFuse(GET_EXTENDED_FUSE_BITS));
-	}
 	#if !defined(NO_BLOCK_SUPPORT)
 	else if (Command == AVR109_COMMAND_GetBlockWriteSupport)
 	{
@@ -599,14 +599,16 @@ static void CDC_Task(void)
 
 	/* Send the endpoint data to the host */
 	Endpoint_ClearIN();
+	uint8_t ResponseStartTick = TransferTicks;
 
 	/* If a full endpoint's worth of data was sent, we need to send an empty packet afterwards to signal end of transfer */
 	if (IsEndpointFull)
 	{
 		while (!(Endpoint_IsINReady()))
 		{
-			if (USB_DeviceState == DEVICE_STATE_Unattached)
-			  return;
+				if (USB_DeviceState == DEVICE_STATE_Unattached ||
+				    (uint8_t)(TransferTicks - ResponseStartTick) >= TRANSFER_TIMEOUT_TICKS)
+				  ResetAfterTransferFailure();
 		}
 
 		Endpoint_ClearIN();
@@ -615,8 +617,9 @@ static void CDC_Task(void)
 	/* Wait until the data has been sent to the host */
 	while (!(Endpoint_IsINReady()))
 	{
-		if (USB_DeviceState == DEVICE_STATE_Unattached)
-		  return;
+			if (USB_DeviceState == DEVICE_STATE_Unattached ||
+			    (uint8_t)(TransferTicks - ResponseStartTick) >= TRANSFER_TIMEOUT_TICKS)
+			  ResetAfterTransferFailure();
 	}
 
 	/* Select the OUT endpoint */

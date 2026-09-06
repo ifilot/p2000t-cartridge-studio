@@ -13,13 +13,17 @@ struct CompatibilityPair {
 
 // This is intentionally explicit. Product versions identify releases; they do
 // not by themselves determine whether the serial command set is compatible.
-constexpr std::array<CompatibilityPair, 6> COMPATIBILITY_MATRIX{{
+constexpr std::array<CompatibilityPair, 10> COMPATIBILITY_MATRIX{{
     {"0.1.0", "0.1.0"},
     {"0.1.1", "0.1.0"},
     {"0.1.1", "0.1.1"},
     {"0.1.2", "0.1.0"},
     {"0.1.2", "0.1.1"},
     {"0.1.2", "0.1.2"},
+    {"0.2.0", "0.1.0"},
+    {"0.2.0", "0.1.1"},
+    {"0.2.0", "0.1.2"},
+    {"0.2.0", "0.2.0"},
 }};
 
 } // namespace
@@ -29,7 +33,7 @@ namespace FirmwareCompatibility {
 QString version_from_board_info(const QString& board_info)
 {
     static const QString prefix = QStringLiteral("P2000T-FW v");
-    static const QRegularExpression version_pattern(QStringLiteral("^[0-9]\\.[0-9]\\.[0-9]$"));
+    static const QRegularExpression version_pattern(QStringLiteral("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"));
 
     if(!board_info.startsWith(prefix)) return {};
     const QString version = board_info.mid(prefix.size());

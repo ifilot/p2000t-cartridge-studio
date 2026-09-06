@@ -72,6 +72,7 @@ public:
      * @return true when progress was observed
      */
     bool waitForBytesWritten(int msecs) override;
+    qint64 bytesToWrite() const override;
 
     /**
      * @brief Wait for data to become available on the serial port.

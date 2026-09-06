@@ -38,7 +38,7 @@ private:
     static constexpr int COMMAND_SIZE = 8;
     static constexpr int DEFAULT_TIMEOUT_MS = 3000;
     static constexpr int BANK_READ_TIMEOUT_MS = 5000;
-    static constexpr int ERASE_TIMEOUT_MS = 5000;
+    static constexpr int ERASE_TIMEOUT_MS = 30000;
 
     std::string portname;
     std::unique_ptr<SerialTransport> port;

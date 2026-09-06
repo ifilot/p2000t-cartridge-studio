@@ -35,6 +35,7 @@
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QSerialPortInfo>
+#include <QSerialPort>
 #include <QSpacerItem>
 #include <QStatusBar>
 #include <QTemporaryFile>
@@ -48,15 +49,26 @@
 
 namespace {
 
-QString cartridge_port(uint16_t product_id)
+struct CartridgePort {
+    QString name;
+    QString serial;
+};
+
+QList<CartridgePort> cartridge_ports(uint16_t product_id)
 {
-    QStringList matches;
+    QList<CartridgePort> matches;
     for(const QSerialPortInfo& port : QSerialPortInfo::availablePorts()) {
         if(port.hasVendorIdentifier() && port.hasProductIdentifier() &&
            port.vendorIdentifier() == 0x03EB && port.productIdentifier() == product_id) {
-            matches.append(port.portName());
+            matches.append({port.portName(), port.serialNumber()});
         }
     }
+    return matches;
+}
+
+CartridgePort single_cartridge_port(uint16_t product_id)
+{
+    const QList<CartridgePort> matches = cartridge_ports(product_id);
     if(matches.size() > 1) {
         throw std::runtime_error(QStringLiteral("Multiple USB devices with ID 03EB:%1 are connected")
             .arg(product_id, 4, 16, QLatin1Char('0')).toUpper().toStdString());
@@ -64,17 +76,67 @@ QString cartridge_port(uint16_t product_id)
     return matches.value(0);
 }
 
-QString wait_for_cartridge_port(uint16_t product_id, int timeout_ms)
+CartridgePort wait_for_cartridge_port(uint16_t product_id, int timeout_ms,
+                                      const QString& expected_serial = {},
+                                      const std::function<bool()>& cancelled = {})
 {
     QElapsedTimer timer;
     timer.start();
-    QString port;
-    while(port.isEmpty() && timer.elapsed() < timeout_ms) {
+    while(timer.elapsed() < timeout_ms) {
+        if(cancelled && cancelled()) return {};
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QThread::msleep(100);
-        port = cartridge_port(product_id);
+        const QList<CartridgePort> matches = cartridge_ports(product_id);
+        if(!expected_serial.isEmpty()) {
+            for(const CartridgePort& port : matches) {
+                if(port.serial == expected_serial) return port;
+            }
+        } else if(matches.size() == 1) {
+            return matches.front();
+        } else if(matches.size() > 1) {
+            throw std::runtime_error(QStringLiteral("Multiple USB devices with ID 03EB:%1 are connected")
+                .arg(product_id, 4, 16, QLatin1Char('0')).toUpper().toStdString());
+        }
     }
-    return port;
+    return {};
+}
+
+QByteArray read_serial_exact(QSerialPort& port, qsizetype size, int timeout_ms)
+{
+    QByteArray result;
+    QElapsedTimer timer;
+    timer.start();
+    while(result.size() < size && timer.elapsed() < timeout_ms) {
+        if(port.bytesAvailable() == 0) port.waitForReadyRead(qMin(100, timeout_ms - static_cast<int>(timer.elapsed())));
+        result.append(port.read(size - result.size()));
+    }
+    return result;
+}
+
+void validate_bootloader_identity(const CartridgePort& device, bool allow_legacy)
+{
+    QSerialPort port;
+    port.setPortName(device.name);
+    port.setBaudRate(57600);
+    if(!port.open(QIODevice::ReadWrite)) {
+        throw std::runtime_error(QStringLiteral("Could not open bootloader on %1: %2")
+            .arg(device.name, port.errorString()).toStdString());
+    }
+    port.clear();
+    if(port.write("S", 1) != 1 || !port.waitForBytesWritten(1000)) {
+        throw std::runtime_error("Could not query the bootloader identity");
+    }
+    const QByteArray identifier = read_serial_exact(port, 7, 1500);
+    const bool current = identifier == QByteArrayLiteral("P2KBOOT");
+    const bool legacy = allow_legacy && identifier == QByteArrayLiteral("LUFACDC");
+    if(!current && !legacy) {
+        throw std::runtime_error(QStringLiteral("Device on %1 did not identify as the P2000T bootloader")
+            .arg(device.name).toStdString());
+    }
+    if(port.write("s", 1) != 1 || !port.waitForBytesWritten(1000) ||
+       read_serial_exact(port, 3, 1500) != QByteArray::fromHex("87951e")) {
+        throw std::runtime_error("Bootloader MCU signature is not ATmega32U4 (87 95 1E)");
+    }
 }
 
 QByteArray read_exact_image(const QString& filename, int required_size, const QString& description)
@@ -92,9 +154,23 @@ QByteArray read_exact_image(const QString& filename, int required_size, const QS
     return data;
 }
 
+bool confirm_destructive(QWidget* parent, const QString& title, const QString& action)
+{
+    QMessageBox box(QMessageBox::Warning, title, action, QMessageBox::NoButton, parent);
+    box.setInformativeText(QObject::tr(
+        "Safety check: this hardware revision has no MCU-readable cartridge-slot interlock. "
+        "Remove the cartridge from the P2000T and connect it only by USB before continuing."));
+    QPushButton* continue_button = box.addButton(QObject::tr("Continue"), QMessageBox::AcceptRole);
+    QPushButton* cancel_button = box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(cancel_button);
+    box.setEscapeButton(cancel_button);
+    box.exec();
+    return box.clickedButton() == continue_button;
+}
+
 } // namespace
 
-MainWindow::MainWindow(const std::shared_ptr<QStringList> _log_messages,
+MainWindow::MainWindow(const std::shared_ptr<LogBuffer> _log_messages,
                        QWidget* parent,
                        SerialInterfaceFactory _serial_interface_factory)
     : QMainWindow(parent),
@@ -102,6 +178,7 @@ MainWindow::MainWindow(const std::shared_ptr<QStringList> _log_messages,
       serial_interface_factory(std::move(_serial_interface_factory))
 {
     Q_INIT_RESOURCE(resources);
+    this->monitor_physical_port = !this->serial_interface_factory;
     if(!this->serial_interface_factory) {
         this->serial_interface_factory = [](const std::string& portname) {
             return std::make_shared<SerialInterface>(portname);
@@ -168,12 +245,16 @@ MainWindow::MainWindow(const std::shared_ptr<QStringList> _log_messages,
     this->label_data_descriptor->setFont(descriptor_font);
 
     this->slot_update_settings();
+
+    this->device_monitor = new QTimer(this);
+    connect(this->device_monitor, &QTimer::timeout, this, &MainWindow::check_device_presence);
+    this->device_monitor->start(1000);
 }
 
 MainWindow::~MainWindow()
 {
-    if(this->readerthread) this->readerthread->wait();
-    if(this->flashthread) this->flashthread->wait();
+    if(this->readerthread) { this->readerthread->requestInterruption(); this->readerthread->wait(); }
+    if(this->flashthread) { this->flashthread->requestInterruption(); this->flashthread->wait(); }
 }
 
 void MainWindow::create_dropdown_menu()
@@ -339,6 +420,9 @@ void MainWindow::build_operations_menu(QVBoxLayout* target_layout)
     this->progress_bar_load->setObjectName("progressBarLoad");
     this->progress_bar_load->setRange(0, NUMBANKS);
     target_layout->addWidget(this->progress_bar_load);
+    this->button_cancel_operation = new QPushButton(tr("Cancel current operation"), rom_group);
+    this->button_cancel_operation->setObjectName("buttonCancelOperation");
+    target_layout->addWidget(this->button_cancel_operation);
 
     this->set_operation_busy(false);
     connect(this->button_identify_chip, &QPushButton::released, this, &MainWindow::read_chip_id);
@@ -350,20 +434,18 @@ void MainWindow::build_operations_menu(QVBoxLayout* target_layout)
     connect(this->button_read_rom, &QPushButton::released, this, &MainWindow::read_rom);
     connect(this->button_flash_rom, &QPushButton::released, this, &MainWindow::flash_rom);
     connect(this->button_erase_chip, &QPushButton::released, this, &MainWindow::erase_chip);
+    connect(this->button_cancel_operation, &QPushButton::released, this, &MainWindow::cancel_operation);
 }
 
 void MainWindow::scan_com_devices()
 {
+    this->invalidate_connection();
     this->combobox_serial_ports->clear();
-    this->board_connected = false;
-    this->chip_identified = false;
-    this->label_board_id->clear();
-    this->label_chip_type->setText(tr("ROM chip: not identified"));
 
     for(const QSerialPortInfo& port : QSerialPortInfo::availablePorts()) {
         if(port.hasVendorIdentifier() && port.hasProductIdentifier()
            && port.vendorIdentifier() == 0x03EB && port.productIdentifier() == 0x2044) {
-            this->combobox_serial_ports->addItem(port.portName());
+            this->combobox_serial_ports->addItem(port.portName(), port.serialNumber());
             qInfo() << "Found P2000T cartridge" << port.portName() << port.description();
         }
     }
@@ -385,6 +467,7 @@ void MainWindow::select_com_port()
 
     this->board_connected = false;
     this->chip_identified = false;
+    this->selected_device_serial.clear();
     try {
         this->serial_interface = this->serial_interface_factory(
             this->combobox_serial_ports->currentText().toStdString());
@@ -409,6 +492,7 @@ void MainWindow::select_com_port()
                     .arg(firmware_version, studio_version, supported).toStdString());
         }
         this->board_connected = true;
+        this->selected_device_serial = this->combobox_serial_ports->currentData().toString();
         this->label_serial->setText(tr("Port: %1").arg(this->combobox_serial_ports->currentText()));
         this->label_board_id->setText(tr("Board: %1").arg(board_info));
         this->statusBar()->showMessage(
@@ -418,9 +502,23 @@ void MainWindow::select_com_port()
         if(this->serial_interface) {
             try { this->serial_interface->close_port(); } catch(...) {}
         }
+        this->invalidate_connection();
         this->raise_error_window(tr("Could not connect to the cartridge.\n\n%1").arg(e.what()));
     }
     this->set_operation_busy(false);
+}
+
+void MainWindow::check_device_presence()
+{
+    if(!this->monitor_physical_port || this->operation_busy || !this->board_connected ||
+       this->combobox_serial_ports->currentText().isEmpty()) return;
+    const QString selected_port = this->combobox_serial_ports->currentText();
+    for(const QSerialPortInfo& port : QSerialPortInfo::availablePorts()) {
+        if(port.portName() == selected_port &&
+           (this->selected_device_serial.isEmpty() ||
+            port.serialNumber() == this->selected_device_serial)) return;
+    }
+    this->invalidate_connection(tr("Cartridge disconnected or changed; scan and reconnect before continuing."));
 }
 
 void MainWindow::read_chip_id()
@@ -454,18 +552,18 @@ void MainWindow::install_latest_firmware()
 {
     const QUrl url = FirmwareUpdater::latest_release_url();
     QProgressDialog download_progress(tr("Downloading the latest application firmware…"),
-                                      QString(), 0, 0, this);
+                                      tr("Cancel"), 0, 0, this);
     download_progress.setWindowTitle(tr("Downloading firmware"));
     download_progress.setWindowModality(Qt::ApplicationModal);
-    download_progress.setCancelButton(nullptr);
     download_progress.show();
     QApplication::processEvents();
 
-    FileDownloader downloader(url);
+    FileDownloader downloader(url, this, 1024 * 1024);
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
     connect(&downloader, &FileDownloader::downloaded, &loop, &QEventLoop::quit);
+    connect(&download_progress, &QProgressDialog::canceled, &downloader, &FileDownloader::cancel);
     connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
     timer.start(30000);
     loop.exec();
@@ -488,6 +586,33 @@ void MainWindow::install_latest_firmware()
     if(contents.isEmpty() || contents.size() > MAX_FIRMWARE_DOWNLOAD_SIZE) {
         this->raise_error_window(tr("The downloaded firmware has an invalid size (%1 bytes).")
                                  .arg(contents.size()));
+        return;
+    }
+
+    const QUrl checksums_url = FirmwareUpdater::latest_checksums_url();
+    QProgressDialog checksum_progress(tr("Verifying the release checksum…"),
+                                      tr("Cancel"), 0, 0, this);
+    checksum_progress.setWindowTitle(tr("Verifying firmware"));
+    checksum_progress.setWindowModality(Qt::ApplicationModal);
+    checksum_progress.show();
+    FileDownloader checksum_downloader(checksums_url, this, 64 * 1024);
+    connect(&checksum_downloader, &FileDownloader::downloaded, &loop, &QEventLoop::quit);
+    connect(&checksum_progress, &QProgressDialog::canceled,
+            &checksum_downloader, &FileDownloader::cancel);
+    timer.start(30000);
+    loop.exec();
+    checksum_progress.close();
+    if(!timer.isActive() || !checksum_downloader.isSuccessful()) {
+        this->raise_error_window(tr("Could not obtain the release checksum.\n\n%1")
+            .arg(checksum_downloader.errorMessage()));
+        return;
+    }
+    timer.stop();
+    try {
+        FirmwareUpdater::verify_release_checksum(contents, checksum_downloader.downloadedData());
+    } catch(const std::exception& e) {
+        this->raise_error_window(tr("The downloaded firmware did not match the published release checksum.\n\n%1")
+            .arg(e.what()));
         return;
     }
 
@@ -527,38 +652,47 @@ void MainWindow::install_firmware_file(const QString& filename,
         return;
     }
 
-    if(QMessageBox::question(this, tr("Install application firmware"),
+    if(!confirm_destructive(this, tr("Install application firmware"),
         tr("Install %1 (%2 data bytes, ending below 0x7000)?\n\n"
            "The USB bootloader remains protected, but the current application firmware will be erased.")
-            .arg(display_name).arg(image_info.data_bytes),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+            .arg(display_name).arg(image_info.data_bytes))) return;
 
     if(remember_directory) {
         this->settings.setValue("last_firmware_dir", QFileInfo(filename).absolutePath());
     }
     this->set_operation_busy(true);
-    QProgressDialog progress(tr("Entering the USB bootloader…"), QString(), 0, 0, this);
+    QProgressDialog progress(tr("Entering the USB bootloader…"), tr("Cancel"), 0, 0, this);
     progress.setWindowTitle(tr("Installing firmware"));
     progress.setWindowModality(Qt::ApplicationModal);
-    progress.setCancelButton(nullptr);
     progress.show();
     QApplication::processEvents();
 
     try {
-        QString boot_port = cartridge_port(0x204A);
-        if(boot_port.isEmpty()) {
-            if(!this->board_connected || !this->serial_interface) {
-                throw std::runtime_error("No cartridge application or bootloader port was found");
+        CartridgePort boot_device;
+        bool allow_legacy_bootloader = false;
+        if(this->board_connected && this->serial_interface) {
+            if(!cartridge_ports(0x204A).isEmpty()) {
+                throw std::runtime_error("Another bootloader-mode device is already connected; disconnect it before updating the selected cartridge");
             }
             this->serial_interface->open_port();
             this->serial_interface->enter_bootloader();
             this->serial_interface->close_port();
-            boot_port = wait_for_cartridge_port(0x204A, 15000);
+            allow_legacy_bootloader = true;
+            boot_device = wait_for_cartridge_port(0x204A, 15000, {},
+                [&progress]() { return progress.wasCanceled(); });
+            if(!this->selected_device_serial.isEmpty() && !boot_device.serial.isEmpty() &&
+               boot_device.serial != this->selected_device_serial) {
+                throw std::runtime_error("The bootloader USB serial number does not match the selected cartridge");
+            }
+        } else {
+            boot_device = single_cartridge_port(0x204A);
         }
-        if(boot_port.isEmpty()) throw std::runtime_error("The USB bootloader did not enumerate within 15 seconds");
+        if(progress.wasCanceled()) throw std::runtime_error("Firmware installation was cancelled; the bootloader remains available");
+        if(boot_device.name.isEmpty()) throw std::runtime_error("No unambiguous P2000T USB bootloader was found");
+        validate_bootloader_identity(boot_device, allow_legacy_bootloader);
 
         progress.setLabelText(tr("Programming and verifying %1 on %2…")
-                              .arg(display_name, boot_port));
+                              .arg(display_name, boot_device.name));
         QApplication::processEvents();
 
         QProcess process;
@@ -567,7 +701,7 @@ void MainWindow::install_firmware_file(const QString& filename,
         process.setArguments({QStringLiteral("-C"), avrdude_config,
                               QStringLiteral("-p"), QStringLiteral("atmega32u4"),
                               QStringLiteral("-c"), QStringLiteral("avr109"),
-                              QStringLiteral("-P"), boot_port,
+                              QStringLiteral("-P"), boot_device.name,
                               QStringLiteral("-b"), QStringLiteral("57600"),
                               QStringLiteral("-e"),
                               QStringLiteral("-U"), QStringLiteral("flash:w:%1:i").arg(filename)});
@@ -580,6 +714,11 @@ void MainWindow::install_firmware_file(const QString& filename,
         while(process.state() != QProcess::NotRunning && upload_timer.elapsed() < 120000) {
             process.waitForFinished(100);
             QApplication::processEvents(QEventLoop::AllEvents, 50);
+            if(progress.wasCanceled()) {
+                process.kill();
+                process.waitForFinished(3000);
+                throw std::runtime_error("Firmware installation was cancelled; retry through the protected bootloader");
+            }
         }
         if(process.state() != QProcess::NotRunning) {
             process.kill();
@@ -595,16 +734,19 @@ void MainWindow::install_firmware_file(const QString& filename,
 
         progress.setLabelText(tr("Firmware verified; waiting for the application…"));
         QApplication::processEvents();
-        const QString application_port = wait_for_cartridge_port(0x2044, 15000);
+        const CartridgePort application_device = wait_for_cartridge_port(
+            0x2044, 15000, boot_device.serial);
+        const QString application_port = application_device.name;
         progress.close();
 
         this->board_connected = false;
         this->chip_identified = false;
         this->serial_interface.reset();
+        this->selected_device_serial.clear();
         this->label_chip_type->setText(tr("ROM chip: not identified"));
         this->label_board_id->clear();
         this->combobox_serial_ports->clear();
-        if(!application_port.isEmpty()) this->combobox_serial_ports->addItem(application_port);
+        if(!application_port.isEmpty()) this->combobox_serial_ports->addItem(application_port, application_device.serial);
         this->label_serial->setText(application_port.isEmpty()
             ? tr("Firmware installed; no compatible application port appeared.")
             : tr("Firmware installed. Connect to %1 to inspect it.").arg(application_port));
@@ -618,6 +760,7 @@ void MainWindow::install_firmware_file(const QString& filename,
         if(this->serial_interface) {
             try { this->serial_interface->close_port(); } catch(...) {}
         }
+        this->invalidate_connection();
         this->raise_error_window(tr("Firmware installation failed. The protected USB bootloader can be used to retry.\n\n%1")
                                  .arg(e.what()));
     }
@@ -638,6 +781,7 @@ void MainWindow::verify_chip()
         }
     } catch(...) {
         try { this->serial_interface->close_port(); } catch(...) {}
+        this->invalidate_connection(tr("Cartridge communication failed; scan and reconnect before retrying."));
         throw;
     }
 }
@@ -659,7 +803,7 @@ void MainWindow::start_read_rom(const QString& filename)
 {
     if(filename.isEmpty()) return;
     this->complete_read_filename = filename;
-    this->set_operation_busy(true);
+    this->set_operation_busy(true, true);
     this->operation_timer.start();
     this->progress_bar_load->setRange(0, NUMBANKS);
     this->progress_bar_load->setValue(0);
@@ -670,6 +814,7 @@ void MainWindow::start_read_rom(const QString& filename)
     connect(this->readerthread.get(), &ReadThread::read_bank_start, this, &MainWindow::read_bank_start);
     connect(this->readerthread.get(), &ReadThread::read_bank_done, this, &MainWindow::read_bank_done);
     connect(this->readerthread.get(), &ReadThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->readerthread.get(), &ReadThread::thread_cancelled, this, &MainWindow::thread_cancelled);
     this->readerthread->start();
 }
 
@@ -709,7 +854,7 @@ void MainWindow::read_result_ready()
 void MainWindow::read_bank()
 {
     this->active_bank = static_cast<unsigned int>(this->bank_selector->currentBank());
-    this->set_operation_busy(true);
+    this->set_operation_busy(true, true);
     this->operation_timer.start();
     this->progress_bar_load->setRange(0, 1);
     this->progress_bar_load->setValue(0);
@@ -722,6 +867,7 @@ void MainWindow::read_bank()
     connect(this->readerthread.get(), &ReadThread::read_bank_start, this, &MainWindow::read_bank_start);
     connect(this->readerthread.get(), &ReadThread::read_bank_done, this, &MainWindow::read_bank_done);
     connect(this->readerthread.get(), &ReadThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->readerthread.get(), &ReadThread::thread_cancelled, this, &MainWindow::thread_cancelled);
     this->readerthread->start();
 }
 
@@ -758,17 +904,16 @@ void MainWindow::flash_rom()
         return;
     }
 
-    if(QMessageBox::question(this, tr("Erase and program ROM"),
+    if(!confirm_destructive(this, tr("Erase and program ROM"),
         tr("Programming erases the entire SST39SF020, writes the selected 256 KiB image, "
-           "and reads it back for verification. Continue?"),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+           "and reads it back for verification."))) {
         return;
     }
 
     this->settings.setValue("last_open_dir", QFileInfo(filename).absolutePath());
     this->flash_data = source;
     this->flash_scope = FlashScope::CompleteRom;
-    this->set_operation_busy(true);
+    this->set_operation_busy(true, true);
     this->operation_timer.start();
     this->progress_bar_load->setRange(0, NUMBLOCKS);
     this->progress_bar_load->setValue(0);
@@ -780,6 +925,7 @@ void MainWindow::flash_rom()
     connect(this->flashthread.get(), &FlashThread::flash_block_start, this, &MainWindow::flash_block_start);
     connect(this->flashthread.get(), &FlashThread::flash_block_done, this, &MainWindow::flash_block_done);
     connect(this->flashthread.get(), &FlashThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->flashthread.get(), &FlashThread::thread_cancelled, this, &MainWindow::thread_cancelled);
     this->flashthread->start();
 }
 
@@ -797,14 +943,13 @@ void MainWindow::write_bank()
         this->raise_error_window(tr("Cannot program bank %1.\n\n%2").arg(this->active_bank).arg(e.what()));
         return;
     }
-    if(QMessageBox::question(this, tr("Erase and program bank"),
+    if(!confirm_destructive(this, tr("Erase and program bank"),
         tr("This erases bank %1 only, writes the loaded 16 KiB ROM, and reads the bank back "
-           "for verification. Continue?").arg(this->active_bank),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+           "for verification.").arg(this->active_bank))) return;
 
     this->flash_data = source;
     this->flash_scope = FlashScope::Bank;
-    this->set_operation_busy(true);
+    this->set_operation_busy(true, true);
     this->operation_timer.start();
     this->progress_bar_load->setRange(0, BANKSIZE / BLOCKSIZE);
     this->progress_bar_load->setValue(0);
@@ -816,6 +961,7 @@ void MainWindow::write_bank()
     connect(this->flashthread.get(), &FlashThread::flash_block_start, this, &MainWindow::flash_block_start);
     connect(this->flashthread.get(), &FlashThread::flash_block_done, this, &MainWindow::flash_block_done);
     connect(this->flashthread.get(), &FlashThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->flashthread.get(), &FlashThread::thread_cancelled, this, &MainWindow::thread_cancelled);
     this->flashthread->start();
 }
 
@@ -852,6 +998,7 @@ void MainWindow::flash_result_ready()
     connect(this->readerthread.get(), &ReadThread::read_bank_start, this, &MainWindow::read_bank_start);
     connect(this->readerthread.get(), &ReadThread::read_bank_done, this, &MainWindow::read_bank_done);
     connect(this->readerthread.get(), &ReadThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->readerthread.get(), &ReadThread::thread_cancelled, this, &MainWindow::thread_cancelled);
     this->readerthread->start();
 }
 
@@ -890,49 +1037,76 @@ void MainWindow::verify_result_ready()
 
 void MainWindow::erase_chip()
 {
-    if(QMessageBox::question(this, tr("Erase complete ROM"),
-        tr("This permanently erases all 256 KiB of the SST39SF020. Continue?"),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    if(!confirm_destructive(this, tr("Erase complete ROM"),
+        tr("This permanently erases all 256 KiB of the SST39SF020."))) return;
 
-    this->set_operation_busy(true);
-    try {
-        this->verify_chip();
-        this->serial_interface->open_port();
-        this->serial_interface->erase_chip();
-        this->serial_interface->close_port();
-        this->statusBar()->showMessage(tr("The SST39SF020 was erased."));
-        QMessageBox::information(this, tr("Erase complete"), tr("All ROM bytes are now FF."));
-    } catch(const std::exception& e) {
-        try { this->serial_interface->close_port(); } catch(...) {}
-        this->raise_error_window(tr("Could not erase the ROM.\n\n%1").arg(e.what()));
-    }
-    this->set_operation_busy(false);
+    this->set_operation_busy(true, true);
+    this->operation_timer.start();
+    this->progress_bar_load->setRange(0, 0);
+    this->statusBar()->showMessage(tr("Erasing and verifying the complete SST39SF020…"));
+    this->flash_scope = FlashScope::CompleteRom;
+    this->flashthread = std::make_unique<FlashThread>(this->serial_interface);
+    this->flashthread->set_erase_complete();
+    connect(this->flashthread.get(), &FlashThread::erase_result_ready, this, &MainWindow::erase_result_ready);
+    connect(this->flashthread.get(), &FlashThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->flashthread.get(), &FlashThread::thread_cancelled, this, &MainWindow::thread_cancelled);
+    this->flashthread->start();
 }
 
 void MainWindow::erase_bank()
 {
     this->active_bank = static_cast<unsigned int>(this->bank_selector->currentBank());
-    if(QMessageBox::question(this, tr("Erase bank"),
-        tr("This permanently erases bank %1 (16 KiB) without changing the other banks. Continue?")
-            .arg(this->active_bank),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    if(!confirm_destructive(this, tr("Erase bank"),
+        tr("This permanently erases bank %1 (16 KiB) without changing the other banks.")
+            .arg(this->active_bank))) return;
 
-    this->set_operation_busy(true);
-    try {
-        this->verify_chip();
-        this->serial_interface->open_port();
-        this->serial_interface->erase_bank(this->active_bank);
-        this->serial_interface->close_port();
-        this->statusBar()->showMessage(tr("Bank %1 was erased.").arg(this->active_bank));
+    this->set_operation_busy(true, true);
+    this->operation_timer.start();
+    this->progress_bar_load->setRange(0, 0);
+    this->statusBar()->showMessage(tr("Erasing and verifying bank %1…").arg(this->active_bank));
+    this->flash_scope = FlashScope::Bank;
+    this->flashthread = std::make_unique<FlashThread>(this->serial_interface);
+    this->flashthread->set_erase_bank(this->active_bank);
+    connect(this->flashthread.get(), &FlashThread::erase_result_ready, this, &MainWindow::erase_result_ready);
+    connect(this->flashthread.get(), &FlashThread::thread_abort, this, &MainWindow::thread_abort);
+    connect(this->flashthread.get(), &FlashThread::thread_cancelled, this, &MainWindow::thread_cancelled);
+    this->flashthread->start();
+}
+
+void MainWindow::erase_result_ready()
+{
+    this->flashthread->wait();
+    this->flashthread.reset();
+    this->progress_bar_load->reset();
+    if(this->flash_scope == FlashScope::CompleteRom) {
+        this->statusBar()->showMessage(tr("The complete SST39SF020 was erased and verified in %1 seconds.")
+            .arg(this->operation_timer.elapsed() / 1000.0, 0, 'f', 1));
+        QMessageBox::information(this, tr("Erase complete"), tr("All 262144 ROM bytes were verified as FF."));
+    } else {
+        this->statusBar()->showMessage(tr("Bank %1 was erased and verified.").arg(this->active_bank));
         QMessageBox::information(this, tr("Bank erased"),
-            tr("All bytes in bank %1 are now FF.").arg(this->active_bank));
-    } catch(const std::exception& e) {
-        if(this->serial_interface) {
-            try { this->serial_interface->close_port(); } catch(...) {}
-        }
-        this->raise_error_window(tr("Could not erase bank %1.\n\n%2").arg(this->active_bank).arg(e.what()));
+            tr("All 16384 bytes in bank %1 were verified as FF.").arg(this->active_bank));
     }
     this->set_operation_busy(false);
+}
+
+void MainWindow::cancel_operation()
+{
+    this->button_cancel_operation->setEnabled(false);
+    this->statusBar()->showMessage(tr("Cancellation requested; waiting for a safe transfer boundary…"));
+    if(this->readerthread) this->readerthread->requestInterruption();
+    if(this->flashthread) this->flashthread->requestInterruption();
+}
+
+void MainWindow::thread_cancelled(const QString& message)
+{
+    if(this->readerthread) { this->readerthread->wait(); this->readerthread.reset(); }
+    if(this->flashthread) { this->flashthread->wait(); this->flashthread.reset(); }
+    this->progress_bar_load->reset();
+    this->complete_read_filename.clear();
+    this->set_operation_busy(false);
+    this->statusBar()->showMessage(message);
+    QMessageBox::warning(this, tr("Operation cancelled"), message);
 }
 
 void MainWindow::thread_abort(const QString& error)
@@ -940,9 +1114,31 @@ void MainWindow::thread_abort(const QString& error)
     if(this->readerthread) { this->readerthread->wait(); this->readerthread.reset(); }
     if(this->flashthread) { this->flashthread->wait(); this->flashthread.reset(); }
     this->progress_bar_load->reset();
+    this->invalidate_connection();
     this->set_operation_busy(false);
     this->raise_error_window(tr("The operation stopped. Reconnect the cartridge before retrying if communication was interrupted.\n\n%1")
                              .arg(error));
+}
+
+void MainWindow::invalidate_connection(const QString& reason)
+{
+    if(this->serial_interface) {
+        try { this->serial_interface->close_port(); } catch(...) {}
+    }
+    this->serial_interface.reset();
+    this->board_connected = false;
+    this->chip_identified = false;
+    this->selected_device_serial.clear();
+    if(this->combobox_serial_ports) this->combobox_serial_ports->clear();
+    if(this->label_board_id) this->label_board_id->clear();
+    if(this->label_chip_type) this->label_chip_type->setText(tr("ROM chip: not identified"));
+    if(this->label_serial) {
+        this->label_serial->setText(reason.isEmpty() ? tr("Not connected") : reason);
+    }
+    if(!reason.isEmpty()) {
+        this->statusBar()->showMessage(reason);
+    }
+    this->set_operation_busy(this->operation_busy);
 }
 
 bool MainWindow::open_file(const QString& filename)
@@ -996,8 +1192,8 @@ void MainWindow::slot_save()
     if(!dir.exists()) dir.setPath(QDir::homePath());
     const QString filename = QFileDialog::getSaveFileName(this, tr("Save 16 KiB bank ROM"), dir.absolutePath(), tr("ROM images (*.bin *.rom)"));
     if(filename.isEmpty()) return;
-    QFile file(filename);
-    if(!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) {
+    QSaveFile file(filename);
+    if(!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
         this->raise_error_window(tr("Could not save %1.").arg(QDir::toNativeSeparators(filename)));
         return;
     }
@@ -1063,18 +1259,18 @@ void MainWindow::slot_open_recent_file()
 void MainWindow::load_default_image()
 {
     const QString url_text = sender()->property("image_name").toString();
-    QProgressDialog progress(tr("Downloading ROM image..."), QString(), 0, 0, this);
+    QProgressDialog progress(tr("Downloading ROM image..."), tr("Cancel"), 0, 0, this);
     progress.setWindowTitle(tr("Please wait"));
     progress.setWindowModality(Qt::ApplicationModal);
-    progress.setCancelButton(nullptr);
     progress.show();
     QApplication::processEvents();
 
-    auto* downloader = new FileDownloader(QUrl(url_text), this);
+    auto* downloader = new FileDownloader(QUrl(url_text), this, BANKSIZE);
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
     connect(downloader, &FileDownloader::downloaded, &loop, &QEventLoop::quit);
+    connect(&progress, &QProgressDialog::canceled, downloader, &FileDownloader::cancel);
     connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
     timer.start(10000);
     loop.exec();
@@ -1100,11 +1296,12 @@ void MainWindow::show_data(const QString& name, const QByteArray& data)
 {
     const QString md5 = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex());
     this->label_data_descriptor->setText(tr("<b>%1</b> | Size: %2 KiB | MD5: %3")
-        .arg(name).arg(data.size() / 1024.0, 0, 'f', 1).arg(md5));
+        .arg(name.toHtmlEscaped()).arg(data.size() / 1024.0, 0, 'f', 1).arg(md5));
 }
 
-void MainWindow::set_operation_busy(bool busy)
+void MainWindow::set_operation_busy(bool busy, bool cancellable)
 {
+    this->operation_busy = busy;
     if(this->button_identify_chip) this->button_identify_chip->setEnabled(!busy && this->board_connected);
     if(this->button_install_firmware) this->button_install_firmware->setEnabled(!busy);
     if(this->button_read_bank) this->button_read_bank->setEnabled(!busy && this->chip_identified);
@@ -1116,6 +1313,7 @@ void MainWindow::set_operation_busy(bool busy)
     if(this->button_erase_chip) this->button_erase_chip->setEnabled(!busy && this->chip_identified);
     if(this->button_scan_ports) this->button_scan_ports->setEnabled(!busy);
     if(this->button_select_serial) this->button_select_serial->setEnabled(!busy && this->combobox_serial_ports->count() > 0);
+    if(this->button_cancel_operation) this->button_cancel_operation->setEnabled(busy && cancellable);
 }
 
 void MainWindow::raise_error_window(const QString& message)

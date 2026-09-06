@@ -2,13 +2,17 @@ cmake_minimum_required(VERSION 3.16)
 
 set(P2000T_VERSION_FILE "${CMAKE_CURRENT_LIST_DIR}/../VERSION")
 file(STRINGS "${P2000T_VERSION_FILE}" P2000T_VERSION LIMIT_COUNT 1)
-if(NOT P2000T_VERSION MATCHES "^[0-9]\\.[0-9]\\.[0-9]$")
-    message(FATAL_ERROR "VERSION must contain three single-digit components such as 0.1.0")
+if(NOT P2000T_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+    message(FATAL_ERROR "VERSION must contain three numeric components such as 0.12.0")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${P2000T_VERSION_FILE}")
 
 # Set the project name
 project(p2000t-cartridge-studio VERSION ${P2000T_VERSION} LANGUAGES CXX)
+if(PROJECT_VERSION_MAJOR GREATER 255 OR PROJECT_VERSION_MINOR GREATER 255 OR
+   PROJECT_VERSION_PATCH GREATER 255)
+    message(FATAL_ERROR "VERSION components must fit in one byte (0-255)")
+endif()
 
 configure_file(src/version.h.in generated/version.h @ONLY)
 
@@ -36,7 +40,7 @@ endif()
 add_compile_definitions(GIT_HASH="${GIT_HASH}")
 
 # Find Qt 6 packages
-find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets SerialPort Network Test)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets SerialPort Network Test)
 
 add_library(cartridge_studio_core STATIC
     src/firmwarecompatibility.cpp
@@ -60,6 +64,7 @@ add_library(cartridge_studio_ui STATIC
     src/bankselector.cpp
     src/filedownloader.cpp
     src/hexviewwidget.cpp
+    src/logbuffer.cpp
     src/logwindow.cpp
     src/mainwindow.cpp
     src/picoflasherapplication.cpp
@@ -148,6 +153,10 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_LIST_DIR}/tests
     )
     target_link_libraries(tst_serial_interface PRIVATE cartridge_studio_core Qt6::Test)
+    if(EXISTS "${P2000T_FIRMWARE_IMAGE}")
+        target_compile_definitions(tst_serial_interface PRIVATE
+            P2000T_TEST_FIRMWARE_IMAGE="${P2000T_FIRMWARE_IMAGE}")
+    endif()
     add_test(NAME tst_serial_interface COMMAND tst_serial_interface)
 
     add_executable(tst_worker_threads

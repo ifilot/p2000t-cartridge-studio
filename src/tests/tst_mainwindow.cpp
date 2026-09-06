@@ -24,6 +24,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <thread>
+#include <vector>
 
 class MainWindowTest : public QObject {
     Q_OBJECT
@@ -47,6 +49,7 @@ private slots:
     void connects_current_version_and_identifies_sst39sf020();
     void reads_selected_bank();
     void reads_complete_rom();
+    void log_buffer_is_thread_safe_and_bounded();
 };
 
 void MainWindowTest::about_dialog_describes_supported_cartridge()
@@ -73,7 +76,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -84,6 +87,8 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
     QVERIFY(!FirmwareCompatibility::supported_firmware_versions(PROGRAM_VERSION).isEmpty());
     QCOMPARE(FirmwareCompatibility::version_from_board_info("P2000T-FW v0.1.0"),
              QString("0.1.0"));
+    QCOMPARE(FirmwareCompatibility::version_from_board_info("P2000T-FW v10.20.30"),
+             QString("10.20.30"));
     QVERIFY(FirmwareCompatibility::version_from_board_info("not-a-cartridge").isEmpty());
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.1.1"),
              QStringList({"0.1.0", "0.1.1"}));
@@ -96,16 +101,19 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
     QVERIFY(FirmwareCompatibility::is_supported("0.1.2", "0.1.1"));
     QVERIFY(FirmwareCompatibility::is_supported("0.1.2", "0.1.2"));
     QVERIFY(!FirmwareCompatibility::is_supported("0.1.2", "0.1.3"));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.0"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
 {
-    auto logs = std::make_shared<QStringList>();
+    auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs);
     QVERIFY(window.findChild<QPushButton*>("buttonIdentifyChip"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadRom"));
     QVERIFY(window.findChild<QPushButton*>("buttonFlashRom"));
     QVERIFY(window.findChild<QPushButton*>("buttonEraseChip"));
+    QVERIFY(window.findChild<QPushButton*>("buttonCancelOperation"));
     auto* install_firmware = window.findChild<QPushButton*>("buttonInstallFirmware");
     QVERIFY(install_firmware);
     QVERIFY(install_firmware->menu());
@@ -175,7 +183,7 @@ void MainWindowTest::reads_selected_bank()
     const QByteArray bank(BANKSIZE, static_cast<char>(0x3C));
     std::copy(bank.begin(), bank.end(), flash.begin() + 11 * BANKSIZE);
     auto backend = std::make_shared<FirmwareEmulatorBackend>(flash);
-    auto logs = std::make_shared<QStringList>();
+    auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs, nullptr, factory(backend));
     addPort(window);
     QMetaObject::invokeMethod(&window, "select_com_port", Qt::DirectConnection);
@@ -196,11 +204,12 @@ void MainWindowTest::reads_selected_bank()
 void MainWindowTest::connects_current_version_and_identifies_sst39sf020()
 {
     auto backend = std::make_shared<FirmwareEmulatorBackend>();
-    auto logs = std::make_shared<QStringList>();
+    auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs, nullptr, factory(backend));
     addPort(window);
     QVERIFY(QMetaObject::invokeMethod(&window, "select_com_port", Qt::DirectConnection));
-    QCOMPARE(window.findChild<QLabel*>("labelBoardId")->text(), QString("Board: ") + P2000T_BOARD_INFO);
+    QCOMPARE(window.findChild<QLabel*>("labelBoardId")->text(),
+             QString("Board: P2000T-FW v") + PROGRAM_VERSION);
     QVERIFY(QMetaObject::invokeMethod(&window, "read_chip_id", Qt::DirectConnection));
     QVERIFY(window.findChild<QLabel*>("labelChipType")->text().contains("SST39SF020"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadRom")->isEnabled());
@@ -210,13 +219,13 @@ void MainWindowTest::connects_compatible_previous_firmware()
 {
     auto backend = std::make_shared<FirmwareEmulatorBackend>(
         QByteArray(), QByteArray("P2000T-FW v0.1.0"));
-    auto logs = std::make_shared<QStringList>();
+    auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs, nullptr, factory(backend));
     addPort(window);
     QVERIFY(QMetaObject::invokeMethod(&window, "select_com_port", Qt::DirectConnection));
     QCOMPARE(window.findChild<QLabel*>("labelBoardId")->text(),
              QString("Board: P2000T-FW v0.1.0"));
-    QVERIFY(window.statusBar()->currentMessage().contains("compatible with Studio 0.1.2"));
+    QVERIFY(window.statusBar()->currentMessage().contains(QString("compatible with Studio %1").arg(PROGRAM_VERSION)));
     QVERIFY(window.findChild<QPushButton*>("buttonIdentifyChip")->isEnabled());
 }
 
@@ -224,7 +233,7 @@ void MainWindowTest::reads_complete_rom()
 {
     QByteArray flash(ROMSIZE, static_cast<char>(0x5A));
     auto backend = std::make_shared<FirmwareEmulatorBackend>(flash);
-    auto logs = std::make_shared<QStringList>();
+    auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs, nullptr, factory(backend));
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -239,6 +248,20 @@ void MainWindowTest::reads_complete_rom()
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.readAll(), flash);
     QVERIFY(window.statusBar()->currentMessage().contains("stored 256 KiB"));
+}
+
+void MainWindowTest::log_buffer_is_thread_safe_and_bounded()
+{
+    LogBuffer buffer;
+    std::vector<std::thread> writers;
+    for(int writer = 0; writer < 4; ++writer) {
+        writers.emplace_back([writer, &buffer]() {
+            for(int line = 0; line < 2000; ++line)
+                buffer.append(QStringLiteral("%1:%2").arg(writer).arg(line));
+        });
+    }
+    for(auto& writer : writers) writer.join();
+    QCOMPARE(buffer.snapshot().size(), 5000);
 }
 
 QTEST_MAIN(MainWindowTest)

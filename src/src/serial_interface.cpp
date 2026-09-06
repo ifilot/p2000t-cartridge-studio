@@ -77,10 +77,17 @@ std::string SerialInterface::get_board_info()
                   "READINFO board identity must remain exactly 16 bytes");
     this->flush_buffer();
     const QByteArray response = this->send_command_capture_response("READINFO", P2000T_BOARD_INFO_LENGTH);
-    if(!response.startsWith("P2000T-FW v")) {
+    if(response.startsWith("P2000T-FW v")) {
+        return response.toStdString();
+    }
+    if(response != QByteArrayLiteral(P2000T_BOARD_INFO)) {
         throw std::runtime_error("The selected port is not a P2000T cartridge (unexpected READINFO response)");
     }
-    return response.toStdString();
+    const QByteArray version = this->send_command_capture_response("READVERS", 3);
+    return QStringLiteral("P2000T-FW v%1.%2.%3")
+        .arg(static_cast<uint8_t>(version[0]))
+        .arg(static_cast<uint8_t>(version[1]))
+        .arg(static_cast<uint8_t>(version[2])).toStdString();
 }
 
 uint16_t SerialInterface::get_chip_id()
@@ -220,11 +227,30 @@ QByteArray SerialInterface::send_command_capture_response(const std::string& com
 
 void SerialInterface::write_bytes(const QByteArray& data, int timeout_ms)
 {
-    const qint64 written = this->port->write(data);
-    if(written != data.size()) {
-        throw std::runtime_error("Failed to queue the complete serial payload");
+    QElapsedTimer timer;
+    timer.start();
+    qsizetype offset = 0;
+    while(offset < data.size()) {
+        const qint64 written = this->port->write(data.constData() + offset,
+                                                data.size() - offset);
+        if(written < 0) {
+            throw std::runtime_error("Serial write failed: " + this->port->errorString());
+        }
+        offset += written;
+        if(written == 0 && !this->port->waitForBytesWritten(25) &&
+           timer.elapsed() >= timeout_ms) {
+            throw std::runtime_error("Serial write timed out while queueing the payload");
+        }
     }
-    this->port->waitForBytesWritten(timeout_ms);
+
+    while(this->port->bytesToWrite() > 0) {
+        const int remaining = timeout_ms - static_cast<int>(timer.elapsed());
+        if(remaining <= 0 || !this->port->waitForBytesWritten(qMin(remaining, 25))) {
+            if(timer.elapsed() >= timeout_ms) {
+                throw std::runtime_error("Serial write timed out before the payload was transmitted");
+            }
+        }
+    }
 }
 
 QByteArray SerialInterface::wait_for_response(int size, int timeout_ms)

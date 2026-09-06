@@ -33,8 +33,8 @@ jobs:
         shell: bash
         run: |
           version="$(tr -d '\r\n' < VERSION)"
-          if [[ ! "$version" =~ ^[0-9]\.[0-9]\.[0-9]$ ]]; then
-            echo "VERSION must contain three single-digit components" >&2
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "VERSION must contain three numeric components" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -58,6 +58,21 @@ jobs:
       - name: Build and test application and bootloader
         run: make -C firmware -j4 combined test
 
+      - name: Run protocol parser with sanitizers
+        run: |
+          product_version="$(cat VERSION)"
+          IFS=. read -r version_major version_minor version_patch < VERSION
+          gcc -std=c99 -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware \
+            "-DP2000T_VERSION=\"${product_version}\"" \
+            "-DP2000T_VERSION_MAJOR=${version_major}" \
+            "-DP2000T_VERSION_MINOR=${version_minor}" \
+            "-DP2000T_VERSION_PATCH=${version_patch}" \
+            firmware/tests/test_protocol.c firmware/protocol.c \
+            -o "$RUNNER_TEMP/test-protocol-sanitized"
+          ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/test-protocol-sanitized"
+
       - name: Build and test all bank-test ROMs
         run: |
           emulator_dir="$RUNNER_TEMP/p2000-bank-z80"
@@ -66,10 +81,8 @@ jobs:
           python3 roms/banktest/test.py --emulator-dir "$emulator_dir"
 
       - name: Verify firmware identity and outputs
-        env:
-          PRODUCT_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          strings firmware/build/cartridge.elf | grep -Fx "P2000T-FW v${PRODUCT_VERSION}"
+          strings firmware/build/cartridge.elf | grep -Fx "P2000T-FW p01.00"
           test -s firmware/build/cartridge.hex
           test -s firmware/build/bootloader.hex
           test -s firmware/build/combined.hex
@@ -290,7 +303,36 @@ jobs:
           file "$installer" | grep -Eq 'PE32(\+)? executable'
           install -m 0755 "$installer" ci-out/
 
-      - name: Upload Windows GUI packages
+      - name: Smoke-test Windows installer
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          installer=ci-out/p2000t-cartridge-studio-windows-x64-setup.exe
+          install_dir="$PWD/build/installer-smoke"
+          cmake -E remove_directory "$install_dir"
+          install_dir_windows=$(cygpath -w "$install_dir")
+          MSYS2_ARG_CONV_EXCL='*' \
+            "$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- \
+            "/DIR=$install_dir_windows"
+          file "$install_dir/p2000t-cartridge-studio.exe" | \
+            grep -Fq 'PE32+ executable'
+          test "$(cat "$install_dir/version.txt")" = "$PRODUCT_VERSION"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/p2000t-cartridge-studio.exe \
+            "$install_dir/p2000t-cartridge-studio.exe"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/firmware/p2000t-programmable-cartridge-firmware.hex \
+            "$install_dir/firmware/p2000t-programmable-cartridge-firmware.hex"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/tools/avrdude/avrdude.exe \
+            "$install_dir/tools/avrdude/avrdude.exe"
+          uninstaller=$(find "$install_dir" -maxdepth 1 -iname 'unins*.exe' -print -quit)
+          test -n "$uninstaller"
+          MSYS2_ARG_CONV_EXCL='*' \
+            "$uninstaller" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          test ! -e "$install_dir/p2000t-cartridge-studio.exe"
+
+      - name: Upload portable package and tested installer
         uses: actions/upload-artifact@v7
         with:
           name: p2000t-cartridge-studio-windows-x64

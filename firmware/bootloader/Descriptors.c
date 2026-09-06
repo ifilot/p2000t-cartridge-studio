@@ -55,11 +55,11 @@ const USB_Descriptor_Device_t DeviceDescriptor =
 
 	.VendorID               = 0x03EB,
 	.ProductID              = 0x204A,
-	.ReleaseNumber          = VERSION_BCD(P2000T_VERSION_MAJOR, P2000T_VERSION_MINOR, P2000T_VERSION_PATCH),
+	.ReleaseNumber          = VERSION_BCD(1,0,0),
 
 	.ManufacturerStrIndex   = STRING_ID_Manufacturer,
 	.ProductStrIndex        = STRING_ID_Product,
-	.SerialNumStrIndex      = NO_DESCRIPTOR,
+	.SerialNumStrIndex      = USE_INTERNAL_SERIAL,
 
 	.NumberOfConfigurations = FIXED_NUM_CONFIGURATIONS
 };
@@ -184,7 +184,7 @@ const USB_Descriptor_String_t LanguageString = USB_STRING_DESCRIPTOR_ARRAY(LANGU
  *  form, and is read out upon request by the host when the appropriate string ID is requested, listed in the Device
  *  Descriptor.
  */
-const USB_Descriptor_String_t ManufacturerString = USB_STRING_DESCRIPTOR(L"LUFA Library");
+const USB_Descriptor_String_t ManufacturerString = USB_STRING_DESCRIPTOR(L"P2000T Project");
 
 /** Product descriptor string. This is a Unicode string containing the product's details in human readable form,
  *  and is read out upon request by the host when the appropriate string ID is requested, listed in the Device

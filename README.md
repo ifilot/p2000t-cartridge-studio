@@ -27,6 +27,8 @@ firmware image or the latest release downloaded from GitHub.
 - `tools/bootloader-installer/` — Windows USBasp preparation utility for the
   initial combined application-and-bootloader installation.
 - `COMPATIBILITY.md` — directional Studio-to-firmware compatibility matrix.
+- `ROBUSTNESS.md` — implemented safeguards and the remaining USB-ID and
+  hardware-interlock decisions.
 
 PCB, schematic, fabrication and enclosure sources remain in the separate
 hardware repository.

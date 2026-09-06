@@ -28,6 +28,7 @@
 #include <QFontDatabase>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QSyntaxHighlighter>
@@ -93,7 +94,7 @@ QFrame* vertical_separator(QWidget* parent) {
 
 } // namespace
 
-LogWindow::LogWindow(const std::shared_ptr<QStringList>& _log_messages)
+LogWindow::LogWindow(const std::shared_ptr<LogBuffer>& _log_messages)
     : log_messages(_log_messages) {
     setObjectName(QStringLiteral("diagnosticLogWindow"));
     setWindowIcon(QIcon(PROGRAM_ICON));
@@ -312,12 +313,13 @@ void LogWindow::rebuild_log() {
     const bool keep_at_bottom = auto_scroll->isChecked();
     text_box->clear();
 
-    const int available = log_messages ? log_messages->size() : 0;
+    const QStringList messages = log_messages ? log_messages->snapshot() : QStringList();
+    const int available = messages.size();
     const int end = pause_button && pause_button->isChecked()
         ? qMin(linesread, available)
         : available;
     for(int i = first_visible_line; i < end; ++i) {
-        append_line(log_messages->at(i));
+        append_line(messages.at(i));
     }
     linesread = end;
 
@@ -329,7 +331,8 @@ void LogWindow::rebuild_log() {
 }
 
 void LogWindow::update_log() {
-    const int new_size = log_messages ? log_messages->size() : 0;
+    const QStringList messages = log_messages ? log_messages->snapshot() : QStringList();
+    const int new_size = messages.size();
     if(pause_button->isChecked()) {
         update_status();
         return;
@@ -343,7 +346,7 @@ void LogWindow::update_log() {
 
     const int old_scroll_value = text_box->verticalScrollBar()->value();
     for(int i = linesread; i < new_size; ++i) {
-        append_line(log_messages->at(i));
+        append_line(messages.at(i));
     }
     linesread = new_size;
 
@@ -357,7 +360,7 @@ void LogWindow::update_log() {
 }
 
 void LogWindow::clear_log() {
-    first_visible_line = log_messages ? log_messages->size() : 0;
+    first_visible_line = log_messages ? log_messages->snapshot().size() : 0;
     linesread = first_visible_line;
     text_box->clear();
     update_status();
@@ -378,12 +381,15 @@ void LogWindow::save_log() {
 
     QSaveFile file(filename);
     if(!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Could not save log"), file.errorString());
         return;
     }
     QTextStream stream(&file);
     stream.setEncoding(QStringConverter::Utf8);
     stream << text_box->toPlainText() << '\n';
-    file.commit();
+    if(stream.status() != QTextStream::Ok || !file.commit()) {
+        QMessageBox::warning(this, tr("Could not save log"), file.errorString());
+    }
 }
 
 void LogWindow::toggle_pause(bool paused) {
@@ -397,7 +403,8 @@ void LogWindow::toggle_pause(bool paused) {
 }
 
 void LogWindow::update_status() {
-    const int available = log_messages ? log_messages->size() : 0;
+    const QStringList messages_snapshot = log_messages ? log_messages->snapshot() : QStringList();
+    const int available = messages_snapshot.size();
     const int displayed_end = pause_button && pause_button->isChecked()
         ? qMin(linesread, available)
         : available;
@@ -407,7 +414,7 @@ void LogWindow::update_status() {
     int errors = 0;
 
     for(int i = qMin(first_visible_line, displayed_end); i < displayed_end; ++i) {
-        const Severity severity = severity_of(log_messages->at(i));
+        const Severity severity = severity_of(messages_snapshot.at(i));
         ++messages;
         if(severity_is_visible(severity)) {
             ++visible;

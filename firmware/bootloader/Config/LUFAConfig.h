@@ -69,7 +69,8 @@
 		#define USE_RAM_DESCRIPTORS
 //		#define USE_FLASH_DESCRIPTORS
 //		#define USE_EEPROM_DESCRIPTORS
-		#define NO_INTERNAL_SERIAL
+			/* Use the ATmega32U4 signature-derived serial in application and
+			 * bootloader mode so host software can match the same cartridge. */
 		#define FIXED_CONTROL_ENDPOINT_SIZE      8
 		#define DEVICE_STATE_AS_GPIOR            0
 		#define FIXED_NUM_CONFIGURATIONS         1

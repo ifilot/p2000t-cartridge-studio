@@ -15,15 +15,19 @@ public:
 
     void set_complete_rom(const QByteArray& data);
     void set_bank(unsigned int bank_index, const QByteArray& data);
+    void set_erase_complete();
+    void set_erase_bank(unsigned int bank_index);
     void run() override;
 
 signals:
     void flash_result_ready();
+    void erase_result_ready();
     void flash_block_start(unsigned int block_id, unsigned int nr_blocks);
     void flash_block_done(unsigned int block_id, unsigned int nr_blocks);
 
 private:
     bool complete_rom = true;
+    bool erase_only = false;
     unsigned int bank_index = 0;
 };
 

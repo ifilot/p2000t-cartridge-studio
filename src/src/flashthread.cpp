@@ -10,6 +10,7 @@ void FlashThread::set_complete_rom(const QByteArray& _data)
         throw std::invalid_argument("A complete SST39SF020 image must be exactly 256 KiB");
     }
     this->complete_rom = true;
+    this->erase_only = false;
     this->data = _data;
 }
 
@@ -18,15 +19,32 @@ void FlashThread::set_bank(unsigned int _bank_index, const QByteArray& _data)
     if(_bank_index >= NUMBANKS) throw std::out_of_range("SST39SF020 bank index is outside 0-15");
     if(_data.size() != BANKSIZE) throw std::invalid_argument("A P2000T bank ROM must be exactly 16 KiB");
     this->complete_rom = false;
+    this->erase_only = false;
     this->bank_index = _bank_index;
     this->data = _data;
+}
+
+void FlashThread::set_erase_complete()
+{
+    this->complete_rom = true;
+    this->erase_only = true;
+    this->data.clear();
+}
+
+void FlashThread::set_erase_bank(unsigned int _bank_index)
+{
+    if(_bank_index >= NUMBANKS) throw std::out_of_range("SST39SF020 bank index is outside 0-15");
+    this->complete_rom = false;
+    this->erase_only = true;
+    this->bank_index = _bank_index;
+    this->data.clear();
 }
 
 void FlashThread::run()
 {
     try {
         const int required_size = this->complete_rom ? ROMSIZE : BANKSIZE;
-        if(this->data.size() != required_size) throw std::runtime_error(
+        if(!this->erase_only && this->data.size() != required_size) throw std::runtime_error(
             this->complete_rom ? "A complete ROM image must be exactly 256 KiB"
                                : "A bank ROM image must be exactly 16 KiB");
 
@@ -45,9 +63,31 @@ void FlashThread::run()
             this->serial_interface->erase_bank(this->bank_index);
         }
 
+        if(this->erase_only) {
+            this->serial_interface->close_port();
+            if(this->isInterruptionRequested()) {
+                emit(thread_cancelled(QStringLiteral("Cancellation arrived after the verified erase had completed")));
+                return;
+            }
+            emit(erase_result_ready());
+            return;
+        }
+
+        if(this->isInterruptionRequested()) {
+            this->serial_interface->close_port();
+            emit(thread_cancelled(QStringLiteral("Programming cancelled after erase; the selected flash area is blank")));
+            return;
+        }
+
         const unsigned int block_count = this->complete_rom ? NUMBLOCKS : BANKSIZE / BLOCKSIZE;
         const unsigned int first_block = this->complete_rom ? 0 : this->bank_index * (BANKSIZE / BLOCKSIZE);
         for(unsigned int block = 0; block < block_count; ++block) {
+            if(this->isInterruptionRequested()) {
+                this->serial_interface->close_port();
+                emit(thread_cancelled(QStringLiteral("Programming cancelled after %1 of %2 blocks; flash contents are incomplete")
+                    .arg(block).arg(block_count)));
+                return;
+            }
             emit(flash_block_start(block, block_count));
             this->serial_interface->burn_block(first_block + block,
                                                this->data.mid(block * BLOCKSIZE, BLOCKSIZE));

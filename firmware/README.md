@@ -60,6 +60,11 @@ installation.
 Application USB ID: `03EB:2044`, product `P2000T Cartridge Serial`.
 Bootloader USB ID: `03EB:204A`, product `P2000T USB Boot`.
 
+The size-constrained bootloader intentionally implements AVR109 flash access,
+not EEPROM or fuse/lock reads. Studio invokes AVRDUDE only for application
+flash erase, write and verification; ISP remains the fuse and factory-recovery
+path.
+
 The application uses 64-byte CDC bulk endpoints. Sequential block reads latch
 A8..A17 once and update only A0..A7 for each byte; PORTD is returned to input
 before flash output is enabled because the low-address latch and flash data bus
@@ -69,9 +74,11 @@ distribution. Both use Windows' built-in usbser driver; do not apply the
 USBasp's WinUSB driver to either serial device. COM numbers can differ.
 
 On power-up/reset, the bootloader offers approximately 5.2 seconds for a host
-to connect, then starts a nonblank application. BOOTLOAD explicitly requests
+to connect, then starts an application only when its manifest and CRC32 are
+valid. BOOTLOAD explicitly requests
 bootloader mode with no timeout. Receiving a bootloader command also cancels
-the timeout. A blank application keeps the bootloader active. AVRDUDE exits it
+the startup window; a stalled command transfer resets after about two seconds.
+A blank or invalid application keeps the bootloader active. AVRDUDE exits it
 through a watchdog reset after programming. If an application crashes and
 cannot accept BOOTLOAD, reset/power-cycle the board and connect during the boot
 window, or use ISP. USB alone cannot remotely reset an entirely unresponsive
@@ -84,11 +91,10 @@ uploads rather than relying on automatic startup.
 The host GUI identifies the cartridge, reads its SST ID, and performs
 erase/program/read-back operations through the USB application protocol.
 
-**Programming erases the entire SST39SF020.** Inputs of 1–262144 bytes are
-padded with FF to 256 KiB. A host tool can generate a deterministic xorshift32
-pattern (seed 0x20003204) covering the whole chip. No old ROM contents are
-backed up. A verify-only operation never erases or programs; a host can also
-save the actual read-back image.
+**Complete-flash programming erases the entire SST39SF020.** Studio requires an
+exact 262144-byte complete image; bank programming requires exactly 16384
+bytes. It does not silently pad either input. No old ROM contents are backed
+up, so read the flash to a file first when a backup is required.
 
 Host tooling identifies BF B6, erases, transmits 256-byte blocks with
 CRC16-XMODEM, checks every operation's status, then independently reads all
@@ -97,8 +103,8 @@ input. It reports the first mismatching address or a successful full-image
 SHA256.
 Firmware checks CRC before writing, rejects zero-to-one transitions before
 modifying a block, polls program completion with a finite bound, and checks the
-programmed bytes. Chip erase is bounded to roughly one second; USB is serviced
-while operations run. A failure/disconnect can leave a partially programmed
+programmed bytes. Chip erase has a finite completion poll and then blank-checks
+all 262144 bytes; USB is serviced while operations run. A failure/disconnect can leave a partially programmed
 ROM; rerun the complete erase/write/verify operation.
 
 ## Serial protocol
@@ -106,13 +112,15 @@ ROM; rerun the complete erase/write/verify operation.
 Eight-byte ASCII commands followed by the exact eight-byte echo. No unsolicited
 text, NUL terminators or newlines. Assert DTR. Commands may span USB packets;
 CR/LF is ignored only at frame boundaries. One request at a time is recommended.
-The protocol uses the same release number as the firmware and desktop app,
-read from the repository's root `VERSION` file. READINFO and DEVIDSST preserve
-the fixed response layout.
+`READINFO` reports a fixed protocol identity. `READVERS` separately reports the
+semantic product version from the repository's root `VERSION` file, so product
+versions are no longer constrained by the fixed-width identity or USB BCD
+descriptor.
 
 | Command | After echo |
 | --- | --- |
-| READINFO | 16 ASCII bytes: `P2000T-FW vX.Y.Z`, using the root `VERSION` value |
+| READINFO | 16 ASCII bytes: `P2000T-FW p01.00` (protocol 1.0) |
+| READVERS | 3 raw bytes: semantic-version major, minor and patch (0–255 each) |
 | DEVIDSST | 2 raw bytes: manufacturer BF, device B6 |
 | BOOTLOAD | status byte, then USB disconnect/re-enumeration |
 | ERASEALL | status after completion |
@@ -165,9 +173,11 @@ Native parser tests cover fragmented/consecutive commands, invalid frames,
 reconnects/timeouts, the CRC golden vector, incremental bank CRC, bank/block
 address bounds, complete write buffering, CRC rejection and binary timeout
 isolation. Host CRC and HEX checks also pass, including rejection of application
-images overlapping the bootloader.
+images overlapping the bootloader, missing/corrupt manifests and data outside
+the CRC-protected application extent. CI also runs the parser with address and
+undefined-behavior sanitizers.
 Earlier firmware hardware tests read BF B6 repeatedly and tested serial framing.
-The current protocol layout was validated on hardware on 2026-09-05:
+The 0.1.x protocol layout was validated on hardware on 2026-09-05:
 
 - Combined bootloader installation verified; fuses 5E/98/FB, lock FF.
 - USB-only firmware upload through COM33 verified all 6026 bytes, followed by
@@ -177,6 +187,12 @@ The current protocol layout was validated on hardware on 2026-09-05:
   `d09f79573a77cd8491450b7478947212e9cad885ceda6151e9ffd31cccf4d26f`.
 - Hardware CRC rejection, address bounds, binary payload timeout/isolation and
   erase-precondition tests passed with the checked block unchanged.
+
+The 0.2.0 source and generated images pass native, sanitizer, emulator and host
+tests. Before release, repeat the USB-only update (including a deliberately
+interrupted upload and boot-window recovery), full-chip blank check, hot-unplug
+and application-watchdog tests on physical hardware. Also exercise the bundled
+AVRDUDE 8.2 against the size-constrained 4032-byte bootloader.
 
 The [16-bank P2000T display test](../roms/banktest/README.md) generates a 256 KiB image
 with bank numbers 00–15. All bank entry/display and bank-switch/NMI CPU execution
