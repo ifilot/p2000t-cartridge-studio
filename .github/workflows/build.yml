@@ -303,7 +303,36 @@ jobs:
           file "$installer" | grep -Eq 'PE32(\+)? executable'
           install -m 0755 "$installer" ci-out/
 
-      - name: Upload Windows GUI packages
+      - name: Smoke-test Windows installer
+        env:
+          PRODUCT_VERSION: ${{ needs.firmware.outputs.version }}
+        run: |
+          installer=ci-out/p2000t-cartridge-studio-windows-x64-setup.exe
+          install_dir="$PWD/build/installer-smoke"
+          cmake -E remove_directory "$install_dir"
+          install_dir_windows=$(cygpath -w "$install_dir")
+          MSYS2_ARG_CONV_EXCL='*' \
+            "$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- \
+            "/DIR=$install_dir_windows"
+          file "$install_dir/p2000t-cartridge-studio.exe" | \
+            grep -Fq 'PE32+ executable'
+          test "$(cat "$install_dir/version.txt")" = "$PRODUCT_VERSION"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/p2000t-cartridge-studio.exe \
+            "$install_dir/p2000t-cartridge-studio.exe"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/firmware/p2000t-programmable-cartridge-firmware.hex \
+            "$install_dir/firmware/p2000t-programmable-cartridge-firmware.hex"
+          cmake -E compare_files \
+            ci-out/p2000t-cartridge-studio/tools/avrdude/avrdude.exe \
+            "$install_dir/tools/avrdude/avrdude.exe"
+          uninstaller=$(find "$install_dir" -maxdepth 1 -iname 'unins*.exe' -print -quit)
+          test -n "$uninstaller"
+          MSYS2_ARG_CONV_EXCL='*' \
+            "$uninstaller" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          test ! -e "$install_dir/p2000t-cartridge-studio.exe"
+
+      - name: Upload portable package and tested installer
         uses: actions/upload-artifact@v7
         with:
           name: p2000t-cartridge-studio-windows-x64
