@@ -231,7 +231,7 @@ MainWindow::MainWindow(const std::shared_ptr<LogBuffer> _log_messages,
     controls_layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Expanding));
 
     this->create_dropdown_menu();
-    this->setMinimumSize(900, 700);
+    this->setMinimumSize(900, 750);
     this->setWindowIcon(QIcon(PROGRAM_ICON));
     this->setWindowTitle(PROGRAM_NAME);
 
@@ -325,13 +325,13 @@ void MainWindow::build_serial_interface_menu(QVBoxLayout* target_layout)
 
 void MainWindow::build_rom_selection_menu(QVBoxLayout* target_layout)
 {
-    this->rom_container = new QGroupBox(tr("P2000T ROM images"));
+    this->rom_container = new QGroupBox(tr("ROM images"));
     auto* layout = new QVBoxLayout(this->rom_container);
     auto* choose = new QPushButton(tr("Choose a curated ROM"), this->rom_container);
     choose->setObjectName("buttonChooseCuratedRom");
     layout->addWidget(choose);
 
-    const QList<QPair<QString, QString>> images = {
+    const QList<QPair<QString, QString>> p2000t_images = {
         {"BASICNL v1.1", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/BASICNL1.1.bin"},
         {"Assembler v5.9", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/assembler%205.9.bin"},
         {"BASICNL Bootstrap for SD-CARD cartridge", "https://github.com/ifilot/p2000t-sdcard/releases/latest/download/BASICBOOTSTRAP.BIN"},
@@ -344,16 +344,30 @@ void MainWindow::build_rom_selection_menu(QVBoxLayout* target_layout)
         {"Word Processor v2", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/WordProcessor%202.bin"},
         {"Zemon assembler v1.4", "https://github.com/p2000t/software/raw/refs/heads/main/cartridges/Zemon%201.4.bin"}
     };
+    const QList<QPair<QString, QString>> p2000m_images = {
+        {"Philips Disk BASIC 24K", "p2000m-basic-24k.bin"},
+        {"MCPM", "p2000m-cpm.bin"},
+        {"UCSD Pascal", "p2000m-pascal.bin"}
+    };
 
     auto* menu = new QMenu(choose);
     menu->setObjectName("menuCuratedRoms");
     const QIcon rom_icon(":/assets/icon/bluecurve/rom-file.png");
-    for(const auto& image : images) {
-        auto* action = menu->addAction(rom_icon, image.first);
-        action->setIconVisibleInMenu(true);
-        action->setProperty("image_name", image.second);
-        connect(action, &QAction::triggered, this, &MainWindow::load_default_image);
-    }
+    const QIcon folder_icon(":/assets/icon/bluecurve/folder.png");
+    auto add_submenu = [this, menu, &rom_icon, &folder_icon](
+        const QString& title, const QString& object_name,
+        const QList<QPair<QString, QString>>& images) {
+        auto* submenu = menu->addMenu(folder_icon, title);
+        submenu->setObjectName(object_name);
+        for(const auto& image : images) {
+            auto* action = submenu->addAction(rom_icon, image.first);
+            action->setIconVisibleInMenu(true);
+            action->setProperty("image_name", image.second);
+            connect(action, &QAction::triggered, this, &MainWindow::load_default_image);
+        }
+    };
+    add_submenu(tr("Philips P2000T"), "menuP2000TRoms", p2000t_images);
+    add_submenu(tr("Philips P2000M"), "menuP2000MRoms", p2000m_images);
     choose->setMenu(menu);
     target_layout->addWidget(this->rom_container);
 }
@@ -1258,7 +1272,27 @@ void MainWindow::slot_open_recent_file()
 
 void MainWindow::load_default_image()
 {
-    const QString url_text = sender()->property("image_name").toString();
+    const QString image_name = sender()->property("image_name").toString();
+    if(!image_name.startsWith("http://") && !image_name.startsWith("https://")) {
+        QFile file(":/assets/roms/" + image_name);
+        if(!file.open(QIODevice::ReadOnly)) {
+            this->raise_error_window(tr("The bundled ROM image could not be opened."));
+            return;
+        }
+        const QByteArray data = file.readAll();
+        if(data.size() != BANKSIZE) {
+            this->raise_error_window(tr("The bundled ROM image was not a valid 16 KiB bank image."));
+            return;
+        }
+        this->hex_widget->set_data(data);
+        this->current_filename.clear();
+        this->button_reload_file->setEnabled(false);
+        this->show_data(image_name + tr(" (bundled)"), data);
+        this->statusBar()->showMessage(tr("Loaded bundled ROM %1.").arg(image_name));
+        return;
+    }
+
+    const QString url_text = image_name;
     QProgressDialog progress(tr("Downloading ROM image..."), tr("Cancel"), 0, 0, this);
     progress.setWindowTitle(tr("Please wait"));
     progress.setWindowModality(Qt::ApplicationModal);

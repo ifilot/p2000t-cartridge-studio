@@ -7,6 +7,17 @@ version.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-06
+
+### Added
+
+- Add bundled Philips Disk BASIC 24K, MCPM, and UCSD Pascal ROM images for
+  using the same SLOT1 cartridge with the Philips P2000M.
+
+### Changed
+
+- Increase the initial application window height by 50 pixels.
+
 ## [0.2.0] - 2026-09-05
 
 ### Added

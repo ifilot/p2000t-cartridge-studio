@@ -11,5 +11,8 @@
         <file>assets/icon/bluecurve/preferences-system.png</file>
         <file>assets/icon/bluecurve/rom-file.png</file>
         <file>assets/icon/clipboard.png</file>
+        <file>assets/roms/p2000m-basic-24k.bin</file>
+        <file>assets/roms/p2000m-cpm.bin</file>
+        <file>assets/roms/p2000m-pascal.bin</file>
     </qresource>
 </RCC>

@@ -74,7 +74,7 @@ AboutDialog::AboutDialog(QWidget *parent)
 
     auto *description_label = new QLabel(
         tr("Manage the SST39SF020 flash memory in an ATmega32U4-based "
-           "programmable data cartridge for the Philips P2000T."),
+           "programmable SLOT1 data cartridge for the Philips P2000T and P2000M."),
         this);
     description_label->setWordWrap(true);
     title_layout->addWidget(description_label);

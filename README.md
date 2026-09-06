@@ -7,6 +7,9 @@
 Software for the ATmega32U4-based programmable P2000T cartridge with an
 SST39SF020 flash ROM. The desktop application can install either a local
 firmware image or the latest release downloaded from GitHub.
+The cartridge connects through SLOT1 and works in both the Philips P2000T and
+P2000M; the application includes Philips Disk BASIC 24K, MCPM, and UCSD Pascal
+P2000M ROM images.
 
 ## Downloads
 

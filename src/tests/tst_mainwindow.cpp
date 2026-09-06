@@ -73,10 +73,11 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
 
     QVERIFY(visible_text.contains("ATmega32U4"));
     QVERIFY(visible_text.contains("SST39SF020"));
+    QVERIFY(visible_text.contains("P2000T and P2000M"));
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -103,12 +104,15 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
     QVERIFY(!FirmwareCompatibility::is_supported("0.1.2", "0.1.3"));
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.0"),
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0"}));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.1"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
 {
     auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs);
+    QCOMPARE(window.minimumSize(), QSize(900, 750));
     QVERIFY(window.findChild<QPushButton*>("buttonIdentifyChip"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadRom"));
     QVERIFY(window.findChild<QPushButton*>("buttonFlashRom"));
@@ -129,8 +133,12 @@ void MainWindowTest::exposes_only_supported_operations()
     QVERIFY(curated_roms);
     QVERIFY(curated_roms->menu());
     QCOMPARE(curated_roms->menu()->objectName(), QString("menuCuratedRoms"));
+    auto* p2000t_roms = window.findChild<QMenu*>("menuP2000TRoms");
+    auto* p2000m_roms = window.findChild<QMenu*>("menuP2000MRoms");
+    QVERIFY(p2000t_roms);
+    QVERIFY(p2000m_roms);
     QAction* teletekst = nullptr;
-    for(QAction* action : curated_roms->menu()->actions()) {
+    for(QAction* action : p2000t_roms->actions()) {
         QVERIFY(!action->text().contains("Joystick", Qt::CaseInsensitive));
         if(action->text() == QString("P2000T Teletekst Cartridge")) teletekst = action;
     }
@@ -138,6 +146,33 @@ void MainWindowTest::exposes_only_supported_operations()
     QCOMPARE(teletekst->property("image_name").toString(),
              QString("https://github.com/ifilot/p2000t-teletekst-cartridge/releases/"
                      "latest/download/p2wp-cartridge.bin"));
+    QCOMPARE(p2000m_roms->actions().size(), 3);
+    QCOMPARE(p2000m_roms->actions().at(0)->text(), QString("Philips Disk BASIC 24K"));
+    QCOMPARE(p2000m_roms->actions().at(0)->property("image_name").toString(),
+             QString("p2000m-basic-24k.bin"));
+    QCOMPARE(p2000m_roms->actions().at(1)->text(), QString("MCPM"));
+    QCOMPARE(p2000m_roms->actions().at(1)->property("image_name").toString(),
+             QString("p2000m-cpm.bin"));
+    QCOMPARE(p2000m_roms->actions().at(2)->text(), QString("UCSD Pascal"));
+    QCOMPARE(p2000m_roms->actions().at(2)->property("image_name").toString(),
+             QString("p2000m-pascal.bin"));
+    QFile basic(":/assets/roms/p2000m-basic-24k.bin");
+    QFile cpm(":/assets/roms/p2000m-cpm.bin");
+    QFile pascal(":/assets/roms/p2000m-pascal.bin");
+    QVERIFY(basic.open(QIODevice::ReadOnly));
+    QVERIFY(cpm.open(QIODevice::ReadOnly));
+    QVERIFY(pascal.open(QIODevice::ReadOnly));
+    QCOMPARE(basic.size(), qint64(BANKSIZE));
+    QCOMPARE(cpm.size(), qint64(BANKSIZE));
+    QCOMPARE(pascal.size(), qint64(BANKSIZE));
+    p2000m_roms->actions().at(0)->trigger();
+    auto* hex_view = window.findChild<HexViewWidget*>("hexViewWidget");
+    auto* data_descriptor = window.findChild<QLabel*>("labelDataDescriptor");
+    QVERIFY(hex_view);
+    QVERIFY(data_descriptor);
+    QCOMPARE(hex_view->get_data(), basic.readAll());
+    QVERIFY(data_descriptor->text().contains("p2000m-basic-24k.bin"));
+    QVERIFY(data_descriptor->text().contains("(bundled)"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadBank"));
     QVERIFY(window.findChild<QPushButton*>("buttonWriteBank"));
     QVERIFY(window.findChild<QPushButton*>("buttonEraseBank"));

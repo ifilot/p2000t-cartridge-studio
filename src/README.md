@@ -2,6 +2,8 @@
 
 Qt 6 desktop application for the ATmega32U4-based P2000T multi-cartridge. It
 supports the SST39SF020 only and requires a compatible firmware release.
+The same SLOT1 cartridge also works in the Philips P2000M. Philips Disk BASIC
+24K, MCPM, and UCSD Pascal bank images are bundled for offline use.
 
 The GUI accepts firmware versions according to the repository's explicit
 [`COMPATIBILITY.md`](../COMPATIBILITY.md) matrix; product versions do not need
