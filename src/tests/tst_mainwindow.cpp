@@ -77,7 +77,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -106,6 +106,8 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0"}));
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.1"),
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1"}));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.2"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
@@ -113,6 +115,9 @@ void MainWindowTest::exposes_only_supported_operations()
     auto logs = std::make_shared<LogBuffer>();
     MainWindow window(logs);
     QCOMPARE(window.minimumSize(), QSize(900, 750));
+    auto* serial_label = window.findChild<QLabel*>("labelSerial");
+    QVERIFY(serial_label);
+    QVERIFY(serial_label->wordWrap());
     QVERIFY(window.findChild<QPushButton*>("buttonIdentifyChip"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadRom"));
     QVERIFY(window.findChild<QPushButton*>("buttonFlashRom"));

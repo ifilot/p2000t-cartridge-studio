@@ -313,6 +313,7 @@ void MainWindow::build_serial_interface_menu(QVBoxLayout* target_layout)
 
     this->label_serial = new QLabel(tr("Connect the cartridge by USB, then scan for it."), group);
     this->label_serial->setObjectName("labelSerial");
+    this->label_serial->setWordWrap(true);
     vertical->addWidget(this->label_serial);
     this->label_board_id = new QLabel(group);
     this->label_board_id->setObjectName("labelBoardId");
@@ -532,7 +533,8 @@ void MainWindow::check_device_presence()
            (this->selected_device_serial.isEmpty() ||
             port.serialNumber() == this->selected_device_serial)) return;
     }
-    this->invalidate_connection(tr("Cartridge disconnected or changed; scan and reconnect before continuing."));
+    this->invalidate_connection(
+        tr("Cartridge disconnected or changed.\nScan and reconnect before continuing."));
 }
 
 void MainWindow::read_chip_id()

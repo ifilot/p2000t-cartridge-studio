@@ -7,6 +7,13 @@ version.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-06
+
+### Fixed
+
+- Wrap the cartridge-disconnection warning so it remains readable in the
+  connection panel.
+
 ## [0.2.1] - 2026-09-06
 
 ### Added
