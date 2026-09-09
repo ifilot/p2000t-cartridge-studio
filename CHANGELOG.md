@@ -7,6 +7,20 @@ version.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-09
+
+### Changed
+
+- Show the four-position DIP-switch pattern alongside every bank selector
+  entry and the currently selected bank, with aligned equipment-style bank
+  labels, a content-sized selected control and a tightly fitted three-column
+  popup.
+
+### Fixed
+
+- Disable firmware installation when neither an application-mode cartridge
+  nor a USB bootloader target is connected.
+
 ## [0.2.2] - 2026-09-06
 
 ### Fixed

@@ -404,7 +404,8 @@ void MainWindow::build_operations_menu(QVBoxLayout* target_layout)
     auto* bank_selector_layout = new QHBoxLayout();
     bank_selector_layout->addWidget(new QLabel(tr("Selected bank"), bank_group));
     this->bank_selector = new BankSelector(bank_group);
-    bank_selector_layout->addWidget(this->bank_selector, 1);
+    bank_selector_layout->addWidget(this->bank_selector, 0, Qt::AlignLeft);
+    bank_selector_layout->addStretch(1);
     bank_layout->addLayout(bank_selector_layout);
     this->button_read_bank = new QPushButton(tr("Read selected bank"), bank_group);
     this->button_read_bank->setObjectName("buttonReadBank");
@@ -456,6 +457,7 @@ void MainWindow::scan_com_devices()
 {
     this->invalidate_connection();
     this->combobox_serial_ports->clear();
+    this->bootloader_present = !cartridge_ports(0x204A).isEmpty();
 
     for(const QSerialPortInfo& port : QSerialPortInfo::availablePorts()) {
         if(port.hasVendorIdentifier() && port.hasProductIdentifier()
@@ -525,8 +527,15 @@ void MainWindow::select_com_port()
 
 void MainWindow::check_device_presence()
 {
-    if(!this->monitor_physical_port || this->operation_busy || !this->board_connected ||
-       this->combobox_serial_ports->currentText().isEmpty()) return;
+    if(!this->monitor_physical_port || this->operation_busy) return;
+    if(!this->board_connected) {
+        this->bootloader_present = !cartridge_ports(0x204A).isEmpty();
+        if(this->button_install_firmware) {
+            this->button_install_firmware->setEnabled(this->bootloader_present);
+        }
+        return;
+    }
+    if(this->combobox_serial_ports->currentText().isEmpty()) return;
     const QString selected_port = this->combobox_serial_ports->currentText();
     for(const QSerialPortInfo& port : QSerialPortInfo::availablePorts()) {
         if(port.portName() == selected_port &&
@@ -756,6 +765,7 @@ void MainWindow::install_firmware_file(const QString& filename,
         progress.close();
 
         this->board_connected = false;
+        this->bootloader_present = false;
         this->chip_identified = false;
         this->serial_interface.reset();
         this->selected_device_serial.clear();
@@ -1143,6 +1153,7 @@ void MainWindow::invalidate_connection(const QString& reason)
     }
     this->serial_interface.reset();
     this->board_connected = false;
+    this->bootloader_present = false;
     this->chip_identified = false;
     this->selected_device_serial.clear();
     if(this->combobox_serial_ports) this->combobox_serial_ports->clear();
@@ -1339,7 +1350,10 @@ void MainWindow::set_operation_busy(bool busy, bool cancellable)
 {
     this->operation_busy = busy;
     if(this->button_identify_chip) this->button_identify_chip->setEnabled(!busy && this->board_connected);
-    if(this->button_install_firmware) this->button_install_firmware->setEnabled(!busy);
+    if(this->button_install_firmware) {
+        this->button_install_firmware->setEnabled(
+            !busy && (this->board_connected || this->bootloader_present));
+    }
     if(this->button_read_bank) this->button_read_bank->setEnabled(!busy && this->chip_identified);
     if(this->button_write_bank) this->button_write_bank->setEnabled(!busy && this->chip_identified);
     if(this->button_erase_bank) this->button_erase_bank->setEnabled(!busy && this->chip_identified);

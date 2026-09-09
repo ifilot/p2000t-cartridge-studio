@@ -83,6 +83,7 @@ private:
     FlashScope flash_scope = FlashScope::CompleteRom;
     unsigned int active_bank = 0;
     bool board_connected = false;
+    bool bootloader_present = false;
     bool chip_identified = false;
     bool operation_busy = false;
     bool monitor_physical_port = true;

@@ -1,6 +1,7 @@
 #ifndef BANKSELECTOR_H
 #define BANKSELECTOR_H
 
+#include <QIcon>
 #include <QPushButton>
 
 class QButtonGroup;
@@ -22,7 +23,10 @@ signals:
     void currentBankChanged(int bank);
 
 private:
+    QString bankLabel(int bank) const;
     QString bankDescription(int bank) const;
+    QString dipSwitchPattern(int bank) const;
+    QIcon dipSwitchIcon(int bank) const;
     void updatePresentation();
 
     QButtonGroup* button_group = nullptr;

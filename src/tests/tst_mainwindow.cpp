@@ -77,7 +77,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -108,6 +108,8 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1"}));
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.2"),
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2"}));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.3"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
@@ -125,6 +127,7 @@ void MainWindowTest::exposes_only_supported_operations()
     QVERIFY(window.findChild<QPushButton*>("buttonCancelOperation"));
     auto* install_firmware = window.findChild<QPushButton*>("buttonInstallFirmware");
     QVERIFY(install_firmware);
+    QVERIFY(!install_firmware->isEnabled());
     QVERIFY(install_firmware->menu());
     QCOMPARE(install_firmware->menu()->objectName(), QString("menuInstallFirmware"));
     QCOMPARE(install_firmware->menu()->actions().size(), 2);
@@ -187,7 +190,11 @@ void MainWindowTest::exposes_only_supported_operations()
     auto* banks = window.findChild<BankSelector*>("bankSelector");
     QVERIFY(banks);
     QCOMPARE(banks->currentBank(), 0);
-    QCOMPARE(banks->text(), QString("Bank 0"));
+    QCOMPARE(banks->text(), QString("BANK\n00"));
+    QVERIFY(!banks->icon().isNull());
+    QCOMPARE(banks->iconSize(), QSize(64, 30));
+    QCOMPARE(banks->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
+    QCOMPARE(banks->sizePolicy().verticalPolicy(), QSizePolicy::Fixed);
     QVERIFY(banks->menu());
     QCOMPARE(banks->menu()->objectName(), QString("menuBankSelector"));
     QCOMPARE(banks->menu()->actions().size(), 1);
@@ -195,20 +202,35 @@ void MainWindowTest::exposes_only_supported_operations()
     QVERIFY(grid_widget);
     auto* grid = qobject_cast<QGridLayout*>(grid_widget->layout());
     QVERIFY(grid);
+    QCOMPARE(grid->sizeConstraint(), QLayout::SetFixedSize);
+    QCOMPARE(grid_widget->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
+    QCOMPARE(grid_widget->sizePolicy().verticalPolicy(), QSizePolicy::Fixed);
     QCOMPARE(grid->count(), NUMBANKS);
     for(int bank = 0; bank < NUMBANKS; ++bank) {
-        auto* item = grid->itemAtPosition(bank / 4, bank % 4);
+        auto* item = grid->itemAtPosition(bank / 3, bank % 3);
         QVERIFY(item);
         auto* button = qobject_cast<QToolButton*>(item->widget());
         QVERIFY(button);
-        QCOMPARE(button->text(), QString::number(bank));
+        QCOMPARE(button->text(), QString("BANK\n%1").arg(bank, 2, 10, QLatin1Char('0')));
+        QVERIFY(!button->icon().isNull());
+        QCOMPARE(button->iconSize(), banks->iconSize());
+        QCOMPARE(button->font(), banks->font());
+        QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonTextBesideIcon);
         QCOMPARE(button->objectName(), QString("buttonSelectBank%1").arg(bank));
     }
+    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank0")
+                 ->property("dipSwitchPattern").toString(), QString("OFF OFF OFF OFF"));
+    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank5")
+                 ->property("dipSwitchPattern").toString(), QString("ON OFF ON OFF"));
+    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank10")
+                 ->property("dipSwitchPattern").toString(), QString("OFF ON OFF ON"));
+    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank15")
+                 ->property("dipSwitchPattern").toString(), QString("ON ON ON ON"));
     auto* bank_15 = window.findChild<QToolButton*>("buttonSelectBank15");
     QVERIFY(bank_15);
     bank_15->click();
     QCOMPARE(banks->currentBank(), 15);
-    QCOMPARE(banks->text(), QString("Bank 15"));
+    QCOMPARE(banks->text(), QString("BANK\n15"));
     QVERIFY(!window.findChild<QPushButton*>("buttonReadCartridge"));
     QVERIFY(!window.findChild<QPushButton*>("buttonScanSlots"));
     for(QAction* top : window.menuBar()->actions()) {
@@ -250,6 +272,7 @@ void MainWindowTest::connects_current_version_and_identifies_sst39sf020()
     QVERIFY(QMetaObject::invokeMethod(&window, "select_com_port", Qt::DirectConnection));
     QCOMPARE(window.findChild<QLabel*>("labelBoardId")->text(),
              QString("Board: P2000T-FW v") + PROGRAM_VERSION);
+    QVERIFY(window.findChild<QPushButton*>("buttonInstallFirmware")->isEnabled());
     QVERIFY(QMetaObject::invokeMethod(&window, "read_chip_id", Qt::DirectConnection));
     QVERIFY(window.findChild<QLabel*>("labelChipType")->text().contains("SST39SF020"));
     QVERIFY(window.findChild<QPushButton*>("buttonReadRom")->isEnabled());
