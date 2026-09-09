@@ -9,12 +9,15 @@
 #include "support/emulated_serial_transport.h"
 
 #include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QGroupBox>
 #include <QGridLayout>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMimeData>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStatusBar>
@@ -45,6 +48,7 @@ private slots:
     void about_dialog_describes_supported_cartridge();
     void compatibility_matrix_accepts_previous_firmware();
     void exposes_only_supported_operations();
+    void drops_bank_rom_onto_hex_editor();
     void connects_compatible_previous_firmware();
     void connects_current_version_and_identifies_sst39sf020();
     void reads_selected_bank();
@@ -77,7 +81,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -110,6 +114,8 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2"}));
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.3"),
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3"}));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.4"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
@@ -261,6 +267,50 @@ void MainWindowTest::reads_selected_bank()
     QVERIFY(!descriptor.contains("/ 16 KiB"));
     QVERIFY(descriptor.contains("MD5: 3ba08696236b8171bb46c9652cda441f"));
     QVERIFY(!descriptor.contains("SHA-256"));
+}
+
+void MainWindowTest::drops_bank_rom_onto_hex_editor()
+{
+    auto logs = std::make_shared<LogBuffer>();
+    MainWindow window(logs);
+    auto* hex_view = window.findChild<HexViewWidget*>("hexViewWidget");
+    QVERIFY(hex_view);
+    QVERIFY(hex_view->viewport()->acceptDrops());
+
+    QMimeData multiple_files;
+    multiple_files.setUrls({QUrl::fromLocalFile("first.bin"),
+                            QUrl::fromLocalFile("second.bin")});
+    QDragEnterEvent rejected_drag(QPoint(8, 8), Qt::CopyAction, &multiple_files,
+                                  Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(hex_view->viewport(), &rejected_drag);
+    QVERIFY(!rejected_drag.isAccepted());
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString filename = directory.filePath("dropped-bank.rom");
+    const QByteArray expected(BANKSIZE, static_cast<char>(0xA5));
+    QFile file(filename);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write(expected), qint64(expected.size()));
+    file.close();
+
+    QMimeData one_file;
+    one_file.setUrls({QUrl::fromLocalFile(filename)});
+    QDragEnterEvent accepted_drag(QPoint(8, 8), Qt::CopyAction, &one_file,
+                                  Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(hex_view->viewport(), &accepted_drag);
+    QVERIFY(accepted_drag.isAccepted());
+
+    QDropEvent drop(QPointF(8, 8), Qt::CopyAction, &one_file,
+                    Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(hex_view->viewport(), &drop);
+    QVERIFY(drop.isAccepted());
+    QCOMPARE(hex_view->get_data(), expected);
+    QVERIFY(window.findChild<QLabel*>("labelDataDescriptor")
+                ->text().contains("dropped-bank.rom"));
+    QVERIFY(window.statusBar()->currentMessage().contains(
+        QDir::toNativeSeparators(QFileInfo(filename).absoluteFilePath())));
+    QVERIFY(window.findChild<QPushButton*>("buttonReloadFile")->isEnabled());
 }
 
 void MainWindowTest::connects_current_version_and_identifies_sst39sf020()

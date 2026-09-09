@@ -207,6 +207,13 @@ MainWindow::MainWindow(const std::shared_ptr<LogBuffer> _log_messages,
     this->hex_widget->setMinimumWidth(580);
     this->hex_widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     data_layout->addWidget(this->hex_widget);
+    connect(this->hex_widget, &HexViewWidget::fileDropped, this,
+            [this](const QString& filename) {
+                if(this->open_file(filename)) {
+                    this->settings.setValue("last_open_dir", QFileInfo(filename).absolutePath());
+                    this->add_recent_file(filename);
+                }
+            });
 
     this->button_reload_file = new QPushButton(tr("Reload file"), data_container);
     this->button_reload_file->setObjectName("buttonReloadFile");

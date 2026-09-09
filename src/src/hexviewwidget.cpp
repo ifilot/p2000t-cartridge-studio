@@ -20,6 +20,11 @@
 
 #include "hexviewwidget.h"
 
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
+
 #include <algorithm>
 
 /**
@@ -28,6 +33,36 @@
  */
 HexViewWidget::HexViewWidget(QWidget *parent)
     : QAbstractScrollArea{parent} {
+    this->viewport()->setAcceptDrops(true);
+    this->viewport()->installEventFilter(this);
+}
+
+bool HexViewWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if(watched == this->viewport()) {
+        if(event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove) {
+            auto* drag_event = static_cast<QDropEvent*>(event);
+            const QList<QUrl> urls = drag_event->mimeData()->urls();
+            if(urls.size() == 1 && urls.front().isLocalFile()) {
+                drag_event->acceptProposedAction();
+            } else {
+                drag_event->ignore();
+            }
+            return true;
+        }
+        if(event->type() == QEvent::Drop) {
+            auto* drop_event = static_cast<QDropEvent*>(event);
+            const QList<QUrl> urls = drop_event->mimeData()->urls();
+            if(urls.size() == 1 && urls.front().isLocalFile()) {
+                drop_event->acceptProposedAction();
+                emit this->fileDropped(urls.front().toLocalFile());
+            } else {
+                drop_event->ignore();
+            }
+            return true;
+        }
+    }
+    return QAbstractScrollArea::eventFilter(watched, event);
 }
 
 /**

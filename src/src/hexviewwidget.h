@@ -22,6 +22,7 @@
 #define HEXVIEWWIDGET_H
 
 #include <QAbstractScrollArea>
+#include <QEvent>
 #include <QScrollBar>
 #include <QPaintEvent>
 #include <QByteArray>
@@ -97,7 +98,16 @@ protected:
      */
     void paintEvent(QPaintEvent *event);
 
+    /**
+     * @brief Handle drag-and-drop events delivered to the scroll-area viewport.
+     */
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 signals:
+    /**
+     * @brief Emitted when one local file is dropped onto the hex editor.
+     */
+    void fileDropped(const QString& filename);
 
 };
 
