@@ -15,7 +15,7 @@
 
 namespace {
 
-constexpr int BANK_COLUMNS = 3;
+constexpr int BANK_COLUMNS = 4;
 
 } // namespace
 
@@ -27,10 +27,14 @@ BankSelector::BankSelector(QWidget* parent)
     this->setObjectName(QStringLiteral("bankSelector"));
     this->setMinimumHeight(40);
     this->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    this->setIconSize(QSize(64, 30));
-    QFont label_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    this->setIconSize(QSize(72, 30));
+    QFont label_font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+    static const int font_id = QFontDatabase::addApplicationFont(
+        QStringLiteral(":/assets/fonts/selawik/selawkb.ttf"));
+    const QStringList families = QFontDatabase::applicationFontFamilies(font_id);
+    if(!families.isEmpty()) label_font.setFamily(families.first());
     label_font.setPointSize(8);
-    label_font.setWeight(QFont::DemiBold);
+    label_font.setWeight(QFont::Bold);
     this->setFont(label_font);
     this->setAccessibleName(tr("Selected bank"));
 
@@ -50,11 +54,11 @@ BankSelector::BankSelector(QWidget* parent)
         button->setObjectName(QStringLiteral("buttonSelectBank%1").arg(bank));
         button->setText(this->bankLabel(bank));
         button->setIcon(this->dipSwitchIcon(bank));
-        button->setIconSize(QSize(64, 30));
+        button->setIconSize(QSize(72, 30));
         button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         button->setFont(this->font());
         button->setCheckable(true);
-        button->setFixedSize(116, 40);
+        button->setFixedSize(124, 40);
         button->setToolTip(this->bankDescription(bank));
         button->setAccessibleName(tr("Select bank %1, DIP 1 to 4: %2")
                                       .arg(bank)
@@ -117,8 +121,8 @@ QString BankSelector::dipSwitchPattern(int bank) const
 {
     QStringList positions;
     positions.reserve(4);
-    for(int bit = 0; bit < 4; ++bit) {
-        positions.append(bank & (1 << bit) ? tr("ON") : tr("OFF"));
+    for(int position = 0; position < 4; ++position) {
+        positions.append(bank & (1 << (3 - position)) ? tr("ON") : tr("OFF"));
     }
     return positions.join(QLatin1Char(' '));
 }
@@ -126,7 +130,8 @@ QString BankSelector::dipSwitchPattern(int bank) const
 QIcon BankSelector::dipSwitchIcon(int bank) const
 {
     constexpr int scale = 2;
-    constexpr int width = 72;
+    // Leave transparent space after the switch body before the bank label.
+    constexpr int width = 80;
     constexpr int height = 34;
     QPixmap pixmap(width * scale, height * scale);
     pixmap.setDevicePixelRatio(scale);
@@ -148,14 +153,14 @@ QIcon BankSelector::dipSwitchIcon(int bank) const
     painter.drawText(QRectF(2.0, 2.0, 13.0, 7.0), Qt::AlignCenter,
                      QStringLiteral("ON"));
 
-    for(int bit = 0; bit < 4; ++bit) {
-        const qreal x = 17.0 + bit * 13.0;
+    for(int position = 0; position < 4; ++position) {
+        const qreal x = 17.0 + position * 13.0;
         const QRectF slot(x, 8.0, 9.0, 18.0);
         painter.setPen(QPen(QColor(92, 19, 19), 0.8));
         painter.setBrush(QColor(74, 24, 24));
         painter.drawRoundedRect(slot, 2.0, 2.0);
 
-        const bool on = bank & (1 << bit);
+        const bool on = bank & (1 << (3 - position));
         const QRectF toggle(x + 1.0, on ? 9.0 : 18.0, 7.0, 7.0);
         painter.setPen(QPen(QColor(170, 170, 166), 0.6));
         painter.setBrush(QColor(245, 244, 236));
@@ -163,7 +168,7 @@ QIcon BankSelector::dipSwitchIcon(int bank) const
 
         painter.setPen(QColor(255, 220, 220));
         painter.drawText(QRectF(x, 26.0, 9.0, 7.0), Qt::AlignCenter,
-                         QString::number(bit + 1));
+                         QString::number(position + 1));
     }
 
     return QIcon(pixmap);

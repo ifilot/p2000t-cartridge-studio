@@ -81,7 +81,7 @@ void MainWindowTest::about_dialog_describes_supported_cartridge()
     QVERIFY(visible_text.contains("16 banks of 16 KiB"));
     QVERIFY(visible_text.contains("03EB:2044"));
     QVERIFY(visible_text.contains(PROGRAM_VERSION));
-    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4"));
+    QVERIFY(visible_text.contains("firmware 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5"));
     QVERIFY(!visible_text.contains(QStringLiteral("certif") + QStringLiteral("ication"),
                                    Qt::CaseInsensitive));
     QVERIFY(!visible_text.contains(QStringLiteral("NL") + QStringLiteral("000020")));
@@ -116,6 +116,8 @@ void MainWindowTest::compatibility_matrix_accepts_previous_firmware()
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3"}));
     QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.4"),
              QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4"}));
+    QCOMPARE(FirmwareCompatibility::supported_firmware_versions("0.2.5"),
+             QStringList({"0.1.0", "0.1.1", "0.1.2", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4", "0.2.5"}));
 }
 
 void MainWindowTest::exposes_only_supported_operations()
@@ -197,8 +199,10 @@ void MainWindowTest::exposes_only_supported_operations()
     QVERIFY(banks);
     QCOMPARE(banks->currentBank(), 0);
     QCOMPARE(banks->text(), QString("BANK\n00"));
+    QCOMPARE(banks->font().family(), QString("Selawik"));
+    QVERIFY(banks->font().bold());
     QVERIFY(!banks->icon().isNull());
-    QCOMPARE(banks->iconSize(), QSize(64, 30));
+    QCOMPARE(banks->iconSize(), QSize(72, 30));
     QCOMPARE(banks->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
     QCOMPARE(banks->sizePolicy().verticalPolicy(), QSizePolicy::Fixed);
     QVERIFY(banks->menu());
@@ -213,7 +217,7 @@ void MainWindowTest::exposes_only_supported_operations()
     QCOMPARE(grid_widget->sizePolicy().verticalPolicy(), QSizePolicy::Fixed);
     QCOMPARE(grid->count(), NUMBANKS);
     for(int bank = 0; bank < NUMBANKS; ++bank) {
-        auto* item = grid->itemAtPosition(bank / 3, bank % 3);
+        auto* item = grid->itemAtPosition(bank / 4, bank % 4);
         QVERIFY(item);
         auto* button = qobject_cast<QToolButton*>(item->widget());
         QVERIFY(button);
@@ -227,9 +231,9 @@ void MainWindowTest::exposes_only_supported_operations()
     QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank0")
                  ->property("dipSwitchPattern").toString(), QString("OFF OFF OFF OFF"));
     QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank5")
-                 ->property("dipSwitchPattern").toString(), QString("ON OFF ON OFF"));
-    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank10")
                  ->property("dipSwitchPattern").toString(), QString("OFF ON OFF ON"));
+    QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank10")
+                 ->property("dipSwitchPattern").toString(), QString("ON OFF ON OFF"));
     QCOMPARE(window.findChild<QToolButton*>("buttonSelectBank15")
                  ->property("dipSwitchPattern").toString(), QString("ON ON ON ON"));
     auto* bank_15 = window.findChild<QToolButton*>("buttonSelectBank15");

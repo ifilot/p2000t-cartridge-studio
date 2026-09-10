@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGroupBox>
@@ -140,11 +141,31 @@ AboutDialog::AboutDialog(QWidget *parent)
            "<a href=\"https://www.gnu.org/licenses/gpl-3.0.html\">GNU GPL v3</a>. "
            "This application uses the "
            "<a href=\"https://www.qt.io/licensing/open-source-lgpl-obligations\">Qt 6 framework</a>. "
+           "Bank labels use Selawik Bold, copyright &copy; 2015 Microsoft Corporation, "
+           "under the <a href=\"https://github.com/microsoft/Selawik/blob/master/LICENSE.txt\">"
+           "SIL Open Font License 1.1</a>. "
            "Bundled third-party software and artwork retain their respective licences; "
            "notices are included in the source and binary distributions.</p>"));
     main_layout->addWidget(credits);
 
     auto *button_box = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    auto *font_license_button = button_box->addButton(tr("Font licence"),
+                                                       QDialogButtonBox::ActionRole);
+    connect(font_license_button, &QPushButton::clicked, this, [this]() {
+        QFile license(QStringLiteral(":/assets/fonts/selawik/LICENSE.txt"));
+        if(!license.open(QIODevice::ReadOnly)) return;
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("Selawik font licence"));
+        dialog.resize(640, 480);
+        auto *layout = new QVBoxLayout(&dialog);
+        auto *text = new QTextBrowser(&dialog);
+        text->setPlainText(QString::fromUtf8(license.readAll()));
+        layout->addWidget(text);
+        auto *close = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+        connect(close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        layout->addWidget(close);
+        dialog.exec();
+    });
     auto *copy_button = button_box->addButton(tr("Copy system information"),
                                                QDialogButtonBox::ActionRole);
     copy_button->setObjectName("copySystemInformationButton");

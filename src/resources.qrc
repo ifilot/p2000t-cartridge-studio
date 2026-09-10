@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
+        <file>assets/fonts/selawik/selawkb.ttf</file>
+        <file>assets/fonts/selawik/LICENSE.txt</file>
         <file>assets/icon/p2000t-cartridge-studio.ico</file>
         <file>assets/icon/p2000t-cartridge-studio.png</file>
         <file>assets/icon/bluecurve/application-exit.png</file>

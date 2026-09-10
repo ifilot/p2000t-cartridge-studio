@@ -7,6 +7,13 @@ version.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-09
+
+### Fixed
+
+- Arrange the bank selector options in a 4×4 grid.
+- Show DIP switch 1 as the MSB and switch 4 as the LSB in icons and tooltips.
+
 ## [0.2.4] - 2026-09-09
 
 ### Added
